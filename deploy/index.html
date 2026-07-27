@@ -129,11 +129,91 @@
   <div class="row" style="justify-content:space-between;align-items:baseline">
     <h1>기획 볼륨 산출</h1>
     <div class="row" style="gap:14px">
+      <span class="muted" id="who"></span>
       <span class="muted" id="dbState">기준 데이터 없음</span>
-      <span class="link muted" id="openDbView">과거 기록 보기</span>
-      <span class="link muted" id="openDataView">데이터</span>
+      <span class="link muted hide" id="openDbView">과거 기록 보기</span>
+      <span class="link muted hide" id="openDataView">데이터</span>
+      <button class="sm hide" id="gLogout">연결 해제</button>
     </div>
   </div>
+
+  <!-- ================= 로그인 관문 =================
+       데이터가 배포물에 없고 드라이브에서 각자 토큰으로 읽으므로,
+       실제 접근 통제는 OAuth 「내부」 대상 + 드라이브 공유 권한이 한다.
+       아래 도메인 확인은 그 위에 얹은 안내이지 보안 장치가 아니다. -->
+  <section id="gate" class="hide">
+    <div class="panel" style="max-width:640px;margin:44px auto">
+      <h2 style="margin-top:0">사내 전용 <span class="hint">— @kiglestudio.com 계정</span></h2>
+      <div class="muted" style="margin-bottom:12px">
+        기준 데이터는 <b>구글 드라이브에서 직접</b> 읽습니다. 배포물에는 데이터가 들어 있지 않으므로
+        드라이브 접근 권한이 없는 계정은 볼 수 있는 것이 없습니다.
+      </div>
+      <div class="row">
+        <button class="primary" id="gateConnect">구글 계정으로 로그인</button>
+        <button class="sm" id="gateSetup">설정</button>
+        <span class="tag" id="gateState"></span>
+      </div>
+      <div id="gateErr" class="note bad hide"></div>
+
+      <div class="note bad hide" id="gFileWarn">
+        <b>이 파일을 컴퓨터에서 직접 열었습니다 (<code>file://</code>).</b>
+        구글 OAuth는 <b>주소가 있는 페이지에서만</b> 동작합니다. 지금은 주소가 없어서
+        구글에 등록할 리디렉션 URI 자체가 만들어지지 않습니다.
+        <div style="margin-top:8px">파일이 있는 폴더에서 아래를 실행하고
+          <code>http://localhost:8000/</code> 로 여세요.</div>
+        <div class="raw" style="margin-top:6px;color:var(--ink)">python -m http.server 8000</div>
+      </div>
+
+      <div id="gateSetupBox" class="hide" style="margin-top:12px;border-top:1px solid var(--line2);padding-top:12px">
+        <div class="stack">
+          <label class="muted">OAuth 클라이언트 ID <span class="hint">— 각자 한 번 넣습니다. 브라우저에만 저장되고 리포에는 넣지 않습니다</span></label>
+          <div class="row">
+            <input type="text" id="gClientId" placeholder="xxxxxxxx.apps.googleusercontent.com" style="flex:1 1 420px">
+            <button class="sm" id="gSaveId">저장</button>
+          </div>
+
+          <div style="margin-top:10px;border-top:1px solid var(--line2);padding-top:10px">
+            <b style="font-size:13px">구글 콘솔에 등록할 값</b>
+            <div class="muted" style="margin:6px 0 2px">승인된 JavaScript 원본</div>
+            <div class="raw" style="color:var(--ink)"><code id="gOrigin"></code></div>
+            <div class="muted" style="margin:8px 0 2px">승인된 리디렉션 URI</div>
+            <div class="row">
+              <div class="raw" style="flex:1 1 320px;color:var(--ink)"><code id="gRedirect"></code></div>
+              <button class="sm" id="gCopyRedirect">복사</button>
+            </div>
+            <div class="muted" style="margin-top:6px" id="gWhere"></div>
+          </div>
+
+          <div style="margin-top:12px;border-top:1px solid var(--line2);padding-top:10px">
+            <label class="muted">기준 데이터 파일 <span class="hint">— 보통 비워 둡니다. 드라이브에서 이름으로 자동으로 찾습니다</span></label>
+            <div class="row">
+              <input type="text" id="gDataFile" placeholder="projects.json 의 드라이브 링크 또는 파일 ID" style="flex:1 1 420px">
+              <button class="sm" id="gSaveFile">저장</button>
+              <button class="sm" id="gClearFile">지정 해제</button>
+            </div>
+            <div class="muted" id="gDataFileState"></div>
+          </div>
+
+          <div class="muted" style="margin-top:12px">
+            설정 절차는 <code>OAUTH_SETUP.md</code>. 콘솔 메뉴는
+            <b>Google Auth Platform → Clients</b> 입니다. <b>Slides API 와 Drive API 를 모두</b> 켜야 하고,
+            스코프는 <code>presentations.readonly</code> · <code>drive.readonly</code> · <code>openid</code> · <code>email</code> 입니다.
+          </div>
+        </div>
+      </div>
+
+      <details style="margin-top:14px">
+        <summary class="muted" style="cursor:pointer;font-size:12px">드라이브를 쓸 수 없을 때 — projects.json 을 직접 넣기</summary>
+        <div class="muted" style="margin:8px 0">
+          이미 파일을 가지고 있는 경우의 예비 경로입니다. 파일은 브라우저 밖으로 나가지 않습니다.
+        </div>
+        <div class="drop" id="dropGate">여기로 <b>projects.json</b> 을 끌어다 놓거나 <span class="link" id="pickGate">파일 선택</span></div>
+        <div id="gateFileErr" class="muted" style="color:var(--bad)"></div>
+      </details>
+    </div>
+  </section>
+
+<div id="app" class="hide">
 
   <!-- 데이터 불러오기 — 평소에는 접혀 있다 -->
   <section id="tab-data" class="hide">
@@ -141,18 +221,25 @@
       <div class="row" style="justify-content:space-between">
         <div><b>기준 데이터</b> <span class="muted">projects.json — 등급표 · 과거 실적 · 기획서 링크. 리포에 포함되지 않습니다</span></div>
         <div class="row">
-          <button class="primary" id="pickDb">파일 선택</button>
-          <button id="clearDb" class="hide">캐시 지우기</button>
+          <button class="primary" id="reloadDb">드라이브에서 다시 불러오기</button>
           <button id="closeData">닫기</button>
         </div>
       </div>
-      <input type="file" id="fileDb" accept=".json,application/json" style="display:none">
-      <div class="drop" id="dropDb" style="margin-top:10px">여기로 <b>projects.json</b> 을 끌어다 놓아도 됩니다</div>
-      <div id="err"></div>
+      <div class="muted" id="dbSource" style="margin-top:8px"></div>
+      <div id="err" style="margin-top:6px"></div>
+      <details style="margin-top:10px">
+        <summary class="muted" style="cursor:pointer;font-size:12px">드라이브를 쓸 수 없을 때 — 파일을 직접 넣기</summary>
+        <div class="row" style="margin-top:8px">
+          <button id="pickDb" class="sm">파일 선택</button>
+          <input type="file" id="fileDb" accept=".json,application/json" style="display:none">
+        </div>
+        <div class="drop" id="dropDb" style="margin-top:8px">여기로 <b>projects.json</b> 을 끌어다 놓아도 됩니다</div>
+      </details>
     </div>
     <div class="note info">
-      데이터는 배포물에 포함되지 않습니다. 한 번 불러오면 브라우저에 저장되어 다시 방문할 때 유지됩니다.
-      로딩은 <code>DataSource</code> 함수 하나로 격리되어 있어 나중에 구글 로그인 방식으로 바꿀 때 그 함수만 교체하면 됩니다.
+      데이터는 배포물에 포함되지 않고 <b>드라이브에서 로그인한 계정의 권한으로</b> 읽습니다.
+      탭이 열려 있는 동안만 브라우저에 보관되고 탭을 닫으면 사라집니다.
+      로딩은 <code>DataSource</code>, 드라이브 접근은 <code>Drive</code>, 인증은 <code>GAuth</code> 객체로 격리되어 있습니다.
     </div>
   </section>
 
@@ -201,52 +288,10 @@
         브라우저와 구글 사이에서만 오갑니다. 플로우 도식에 번호로 나열된 단계를
         <b>코드로</b> 그대로 옮깁니다.
       </div>
-      <div class="row" style="justify-content:space-between">
-        <div class="row">
-          <span class="tag" id="gState">연결 안 됨</span>
-          <button class="primary" id="gConnect">구글 계정 연결</button>
-          <button id="gLogout" class="hide">연결 해제</button>
-          <button id="gRead" disabled>기획서 읽기</button>
-        </div>
-        <button class="sm" id="gSetup">설정</button>
-      </div>
-      <div class="note bad hide" id="gFileWarn">
-        <b>이 파일을 컴퓨터에서 직접 열었습니다 (<code>file://</code>).</b>
-        구글 OAuth는 <b>주소가 있는 페이지에서만</b> 동작합니다. 지금은 주소가 없어서
-        구글에 등록할 리디렉션 URI 자체가 만들어지지 않습니다.
-        <div style="margin-top:8px">파일이 있는 폴더에서 아래를 실행하고
-          <code>http://localhost:8000/</code> 로 여세요.</div>
-        <div class="raw" style="margin-top:6px;color:var(--ink)">python -m http.server 8000</div>
-        <div style="margin-top:6px">그러면 리디렉션 URI가 <code>http://localhost:8000/</code> 로 잡히고,
-          이 값을 구글 콘솔에 등록하면 됩니다. (배포한 뒤에는 배포 도메인으로 한 번 더 등록)</div>
-      </div>
-
-      <div id="gSetupBox" class="hide" style="margin-top:10px;border-top:1px solid var(--line2);padding-top:10px">
-        <div class="stack">
-          <label class="muted">OAuth 클라이언트 ID <span class="hint">— 공개해도 되는 값입니다. 시크릿은 쓰지 않습니다</span></label>
-          <div class="row">
-            <input type="text" id="gClientId" placeholder="xxxxxxxx.apps.googleusercontent.com" style="flex:1 1 420px">
-            <button class="sm" id="gSaveId">저장</button>
-          </div>
-
-          <div style="margin-top:10px;border-top:1px solid var(--line2);padding-top:10px">
-            <b style="font-size:13px">구글 콘솔에 등록할 값</b>
-            <div class="muted" style="margin:6px 0 2px">승인된 JavaScript 원본</div>
-            <div class="raw" style="color:var(--ink)"><code id="gOrigin"></code></div>
-            <div class="muted" style="margin:8px 0 2px">승인된 리디렉션 URI</div>
-            <div class="row">
-              <div class="raw" style="flex:1 1 320px;color:var(--ink)"><code id="gRedirect"></code></div>
-              <button class="sm" id="gCopyRedirect">복사</button>
-            </div>
-            <div class="muted" style="margin-top:6px" id="gWhere"></div>
-          </div>
-
-          <div class="muted" style="margin-top:10px">
-            설정 절차는 <code>OAUTH_SETUP.md</code>. 콘솔 메뉴는
-            <b>Google Auth Platform → Clients</b> 입니다 (예전의 「사용자 인증 정보」).
-            스코프는 <code>presentations.readonly</code> 하나만 씁니다.
-          </div>
-        </div>
+      <div class="row">
+        <span class="tag" id="gState">연결 안 됨</span>
+        <button id="gRead" disabled>기획서 읽기</button>
+        <button class="sm hide" id="gRelogin">다시 로그인</button>
       </div>
       <div id="gErr" style="color:var(--bad);font-size:12.5px;margin-top:8px"></div>
       <div id="gResult" style="margin-top:10px"></div>
@@ -364,6 +409,8 @@
     </div>
     <div id="dbDetail" class="hide"></div>
   </section>
+
+</div><!-- /#app -->
 </div>
 
 <script>
@@ -373,23 +420,48 @@
    데이터 로딩 — 단일 함수로 격리 (요구사항 「기술 결정」)
    인증 방식으로 전환할 때 이 객체만 교체하면 된다.
    ══════════════════════════════════════════════════════════════════ */
+/* 이 도메인 계정만 쓸 수 있다.
+   주의 — 아래 확인은 안내용이고, 실제 차단은 두 군데서 일어난다.
+   (1) OAuth 「내부(Internal)」 대상이 다른 도메인 로그인을 막는다
+   (2) 드라이브 파일 공유 권한이 없으면 데이터를 아예 못 받는다
+   배포물에 데이터가 없으므로 이 JS를 고쳐 통과해도 볼 것이 없다. */
+const ALLOWED_DOMAIN = "kiglestudio.com";
+
+/* 드라이브에서 찾을 위치. 이름으로 찾으므로 파일 ID를 코드에 박지 않는다. */
+const DATA_FOLDER = "개발 볼륨 산출 데이터";
+const DATA_FILE   = "projects.json";
+
 const CACHE_KEY = "kigle-plan-db/projects@1";
 const DataSource = {
-  cached() { try { const s = store.get(CACHE_KEY); return s ? JSON.parse(s) : null; } catch(e) { return null; } },
+  /* 로그인한 사람만 보게 하려고 세션 저장소를 쓴다. 탭을 닫으면 사라지고,
+     드라이브에서 자동으로 다시 받으므로 오래 남겨둘 이유가 없다. */
+  cached() { try { const s = store.get(CACHE_KEY, true); return s ? JSON.parse(s) : null; } catch(e) { return null; } },
+  keep(p) { store.set(CACHE_KEY, JSON.stringify(p), true); },
   async fromFile(file) {
     const p = JSON.parse(await file.text());
     this.validate(p);
-    store.set(CACHE_KEY, JSON.stringify(p));
+    this.keep(p);
     return p;
   },
-  clear() { store.del(CACHE_KEY); },
+  async fromDrive() {
+    const file = await Drive.locate();
+    const p = JSON.parse(await Drive.download(file.id));
+    this.validate(p);
+    this.keep(p);
+    return { payload: p, file };
+  },
+  clear() { store.del(CACHE_KEY, true); store.del(CACHE_KEY); },
   validate(p) { if (!p || !Array.isArray(p.projects)) throw new Error("projects 배열이 없습니다."); }
 };
 
 /* ══════════════════════════════════════════════════════════════════
-   구글 OAuth — 브라우저 전용, PKCE. 클라이언트 시크릿을 쓰지 않으므로
-   공개 리포에 올려도 무관하다. 외부 SDK 스크립트도 쓰지 않는다.
-   스코프는 presentations.readonly 하나. 드라이브 전체 권한을 요구하지 않는다.
+   구글 OAuth — 브라우저 전용, PKCE. 클라이언트 시크릿을 쓰지 않고
+   외부 SDK 스크립트도 쓰지 않는다. 스코프는 모두 읽기 전용이다.
+
+   ⚠ 클라이언트 ID 를 이 파일에 기본값으로 박지 않는다. 시크릿은 아니지만,
+   공개 리포에 올라간 ID + 같은 클라이언트에 등록된 localhost 리디렉션이 맞물리면
+   남의 PC 로컬 페이지가 우리 ID로 로그인 흐름을 띄워 드라이브 읽기 토큰을
+   받아낼 수 있다. 각자 「설정」에 한 번 넣는다 — OAUTH_SETUP.md 7번 참고.
    ══════════════════════════════════════════════════════════════════ */
 /* 저장소 안전 래퍼 — file:// 나 사생활 보호 모드에서 localStorage 접근이 막히면
    예외가 나서 화면 전체가 죽는다. 실패해도 조용히 넘어가고 기능만 비활성화한다. */
@@ -400,8 +472,28 @@ const store = {
   available() { try { localStorage.setItem("__t","1"); localStorage.removeItem("__t"); return true; } catch(e) { return false; } }
 };
 
-const GKEY = { id:"kigle-plan-db/gclient", tok:"kigle-plan-db/gtoken", ver:"kigle-plan-db/gverifier" };
-const GSCOPE = "https://www.googleapis.com/auth/presentations.readonly";
+const GKEY = { id:"kigle-plan-db/gclient", tok:"kigle-plan-db/gtoken",
+               ver:"kigle-plan-db/gverifier", file:"kigle-plan-db/gdatafile" };
+/* openid·email 은 로그인한 계정의 도메인을 확인하기 위한 것이고,
+   drive.readonly 는 기준 데이터 파일을 읽기 위한 것이다. 모두 읽기 전용이다. */
+const GSCOPE = [
+  "openid", "email",
+  "https://www.googleapis.com/auth/presentations.readonly",
+  "https://www.googleapis.com/auth/drive.readonly"
+].join(" ");
+
+/** ID 토큰의 payload 를 읽는다. 서명은 검증하지 않는다 — 화면에 이메일을 띄우고
+    도메인이 다르면 안내하기 위한 용도일 뿐, 이 값으로 권한을 주지 않는다. */
+function decodeJwt(t) {
+  try {
+    const b = String(t || "").split(".")[1];
+    if (!b) return null;
+    const raw = atob(b.replace(/-/g, "+").replace(/_/g, "/"));
+    const utf8 = decodeURIComponent([...raw].map(c =>
+      "%" + c.charCodeAt(0).toString(16).padStart(2, "0")).join(""));
+    return JSON.parse(utf8);
+  } catch(e) { return null; }
+}
 
 const GAuth = {
   clientId() { return store.get(GKEY.id) || ""; },
@@ -419,6 +511,9 @@ const GAuth = {
     } catch(e) { return null; }
   },
   clear() { store.del(GKEY.tok, true); },
+
+  user() { const t = this.token(); return t ? { email: t.email || "", domain: t.domain || "" } : null; },
+  allowed() { const u = this.user(); return !!u && u.domain.toLowerCase() === ALLOWED_DOMAIN; },
 
   async b64url(buf) {
     return btoa(String.fromCharCode(...new Uint8Array(buf)))
@@ -439,7 +534,8 @@ const GAuth = {
     const p = new URLSearchParams({
       client_id: cid, redirect_uri: this.redirectUri(), response_type: "code",
       scope: GSCOPE, code_challenge: await this.challenge(verifier),
-      code_challenge_method: "S256", access_type: "online", prompt: "select_account"
+      code_challenge_method: "S256", access_type: "online", prompt: "select_account",
+      hd: ALLOWED_DOMAIN          // 계정 선택 화면에 이 도메인 계정만 보여준다
     });
     location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + p;
   },
@@ -457,24 +553,102 @@ const GAuth = {
     const j = await res.json();
     if (!res.ok) throw new Error(j.error_description || j.error || "토큰 교환 실패");
     store.del(GKEY.ver, true);
+    const c = decodeJwt(j.id_token) || {};
     store.set(GKEY.tok, JSON.stringify({
-      access_token: j.access_token, exp: Date.now() + (j.expires_in - 60) * 1000 }), true);
+      access_token: j.access_token,
+      exp: Date.now() + (j.expires_in - 60) * 1000,
+      email: c.email || "",
+      // hd 는 Workspace 계정에만 붙는다. 없으면 이메일에서 도메인을 떼어 쓴다.
+      domain: c.hd || String(c.email || "").split("@")[1] || ""
+    }), true);
     return true;
   },
 
-  async slides(presentationId) {
+  /** 구글 API 공통 호출. 토큰 만료·API 미사용설정을 사람이 읽을 수 있는 말로 바꾼다. */
+  async api(url) {
     const t = this.token();
     if (!t) throw new Error("구글 계정 연결이 필요합니다.");
-    const res = await fetch(
-      `https://slides.googleapis.com/v1/presentations/${encodeURIComponent(presentationId)}`,
-      { headers: { Authorization: "Bearer " + t.access_token } });
-    const j = await res.json();
-    if (!res.ok) throw new Error(j.error?.message || "슬라이드를 읽지 못했습니다.");
-    return j;
+    const res = await fetch(url, { headers: { Authorization: "Bearer " + t.access_token } });
+    if (res.ok) return res;
+    let msg = "";
+    try { msg = (await res.json()).error?.message || ""; } catch(e) {}
+    if (res.status === 401) { this.clear(); throw new Error("인증이 만료되었습니다. 다시 로그인해 주세요."); }
+    if (res.status === 403 && /has not been used|is disabled/i.test(msg))
+      throw new Error(msg + " — 구글 콘솔에서 해당 API를 사용 설정하세요 (Slides API · Drive API).");
+    if (res.status === 403 && /insufficient|scope/i.test(msg))
+      throw new Error("권한 범위가 부족합니다. 「연결 해제」 후 다시 로그인해 스코프를 새로 승인하세요.");
+    throw new Error(msg || `요청 실패 (HTTP ${res.status})`);
+  },
+
+  async slides(presentationId) {
+    const res = await this.api(
+      `https://slides.googleapis.com/v1/presentations/${encodeURIComponent(presentationId)}`);
+    return res.json();
   }
 };
 
 const presentationId = url => (String(url||"").match(/\/presentation\/d\/([a-zA-Z0-9_-]+)/) || [])[1] || null;
+const driveId = v => {
+  const s = String(v || "").trim();
+  return (s.match(/\/(?:file|d)\/d?\/?([a-zA-Z0-9_-]{20,})/)
+       || s.match(/[?&]id=([a-zA-Z0-9_-]{20,})/)
+       || (/^[a-zA-Z0-9_-]{20,}$/.test(s) ? [null, s] : []))[1] || null;
+};
+
+/* ══════════════════════════════════════════════════════════════════
+   구글 드라이브 — 기준 데이터(projects.json)를 읽는다.
+   파일 ID를 코드에 박지 않고 폴더명 → 파일명으로 찾는다. 리포가 공개여도
+   ID가 노출되지 않고, 파일을 옮기거나 다시 올려도 코드를 고칠 일이 없다.
+   실제 접근 통제는 드라이브 공유 권한이 한다.
+   ══════════════════════════════════════════════════════════════════ */
+const Drive = {
+  fileId()      { return store.get(GKEY.file) || ""; },
+  setFileId(v)  { const id = driveId(v); if (id) store.set(GKEY.file, id); return id; },
+  clearFileId() { store.del(GKEY.file); },
+
+  async list(q) {
+    // corpora=allDrives 는 공유 드라이브(팀 드라이브)에 올린 경우까지 찾기 위한 것이다.
+    // 다만 그때 orderBy 가 무시되므로 정렬은 받아서 직접 한다.
+    const p = new URLSearchParams({
+      q, fields: "files(id,name,modifiedTime)", pageSize: "20",
+      supportsAllDrives: "true", includeItemsFromAllDrives: "true", corpora: "allDrives"
+    });
+    const res = await GAuth.api("https://www.googleapis.com/drive/v3/files?" + p);
+    return ((await res.json()).files || [])
+      .sort((a, b) => String(b.modifiedTime || "").localeCompare(String(a.modifiedTime || "")));
+  },
+
+  async meta(id) {
+    const p = new URLSearchParams({ fields: "id,name,modifiedTime", supportsAllDrives: "true" });
+    const res = await GAuth.api(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?` + p);
+    return res.json();
+  },
+
+  async download(id) {
+    const res = await GAuth.api(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`);
+    return res.text();
+  },
+
+  /** 폴더 → 그 안의 파일 순으로 좁혀 찾고, 없으면 이름으로 전체 검색한다. */
+  async locate() {
+    const saved = this.fileId();
+    if (saved) return { ...(await this.meta(saved)), via: "설정에서 지정한 파일" };
+
+    const lit = s => s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+    for (const f of await this.list(
+        `mimeType='application/vnd.google-apps.folder' and name='${lit(DATA_FOLDER)}' and trashed=false`)) {
+      const hits = await this.list(`'${f.id}' in parents and name='${lit(DATA_FILE)}' and trashed=false`);
+      if (hits.length) return { ...hits[0], via: `폴더 「${DATA_FOLDER}」` };
+    }
+    const any = await this.list(`name='${lit(DATA_FILE)}' and trashed=false`);
+    if (any.length) return { ...any[0], via: "드라이브 전체에서 이름으로 찾음" };
+
+    throw new Error(`드라이브에서 「${DATA_FOLDER}」 폴더의 ${DATA_FILE} 을 찾지 못했습니다. `
+      + `이 계정에 파일이 공유되어 있는지 확인하거나, 설정에서 파일 링크를 직접 지정하세요.`);
+  }
+};
 
 /* ══════════════════════════════════════════════════════════════════
    슬라이드 → 단계 후보 (코드 파싱, 외부 전송 없음)
@@ -1139,14 +1313,18 @@ $("#backToCalc").onclick   = () => { location.hash = ""; showTab("calc"); };
 $("#closeData").onclick    = () => showTab("calc");
 
 /* ══════════════════════════════════════════════════════════════════ 부팅 */
+let DRIVE_FILE = null;   // 드라이브에서 읽은 파일 정보 (있으면 출처로 표시)
+
 function bootDb(payload) {
   DB = payload;
   G = payload.grade_tables;
   if (!G) { $("#err").textContent = "데이터 파일에 grade_tables 가 없습니다. extract_volumes.py 를 다시 실행해 주세요."; return; }
-  $("#clearDb").classList.remove("hide");
-  $("#dropDb").classList.add("hide");
   $("#err").textContent = "";
   $("#dbState").innerHTML = `기준 데이터 — 프로젝트 <b>${DB.projects.length}</b> · 파트 <b>${DB.projects.reduce((s,p)=>s+p.parts.length,0)}</b>`;
+  $("#dbSource").innerHTML = DRIVE_FILE
+    ? `드라이브 — <b>${esc(DRIVE_FILE.name || DATA_FILE)}</b> · ${esc(DRIVE_FILE.via || "")}`
+      + (DRIVE_FILE.modifiedTime ? ` · 수정 ${esc(String(DRIVE_FILE.modifiedTime).slice(0,10))}` : "")
+    : `직접 넣은 파일에서 읽었습니다.`;
   showTab("calc");
 
   const uniq = f => [...new Set(DB.projects.map(f))].sort();
@@ -1160,7 +1338,7 @@ function bootDb(payload) {
 function bootSteps(payload) {
   if (!payload || !Array.isArray(payload.parts)) throw new Error("parts 배열이 없습니다. STEPS_SCHEMA.md 형식을 확인하세요.");
   payload.parts.forEach(p => { if (!Array.isArray(p.steps)) throw new Error(`파트 '${p.part_key||"?"}' 에 steps 배열이 없습니다.`); });
-  if (!G) throw new Error("먼저 「데이터」 탭에서 projects.json 을 불러오세요. 등급표가 필요합니다.");
+  if (!G) throw new Error("기준 데이터가 없습니다. 「데이터」 → 「드라이브에서 다시 불러오기」 를 눌러 주세요. 등급표가 필요합니다.");
   STEPS = payload;
   M.dev = {}; M.design = {}; M.incidental = {};
   if (payload.project)  $("#cProject").value = payload.project;
@@ -1212,25 +1390,52 @@ function loadFromCandidates() {
 /* ══════════════════════════════════════════════════════════════════ 소스 전환 */
 $$("#srcTabs .src").forEach(b => b.onclick = () => {
   $$("#srcTabs .src").forEach(x => x.classList.toggle("on", x === b));
-  ["drive","file","ai"].forEach(n => $("#src-" + n).classList.toggle("hide", n !== b.dataset.src));
+  ["drive","file"].forEach(n => $("#src-" + n).classList.toggle("hide", n !== b.dataset.src));
 });
 
-/* ══════════════════════════════════════════════════════════════════ OAuth 화면 */
+/* ══════════════════════════════════════════════════════════════════ 로그인 관문 · OAuth 화면 */
+function showGate(on) {
+  $("#gate").classList.toggle("hide", !on);
+  $("#app").classList.toggle("hide", on);
+  $("#openDbView").classList.toggle("hide", on);
+  $("#openDataView").classList.toggle("hide", on);
+}
+function gateErr(msg) {
+  const el = $("#gateErr");
+  el.classList.toggle("hide", !msg);
+  el.innerHTML = msg ? esc(msg) : "";
+}
+
 function syncG() {
   const served = GAuth.servedOverHttp();
   const t = served ? GAuth.token() : null;
+  const u = GAuth.user();
+  const cid = GAuth.clientId();
 
   // file:// 로 열면 origin 이 "null" 이라 등록할 리디렉션 URI 자체가 없다.
   $("#gFileWarn").classList.toggle("hide", served);
-  $("#gConnect").disabled = !served;
+  $("#gateConnect").disabled = !served;
+  $("#gateState").textContent = !served ? "로컬 파일 — 로그인 불가"
+    : cid ? `@${ALLOWED_DOMAIN} 계정으로 로그인하세요` : "클라이언트 ID 미설정 — 설정을 먼저 누르세요";
+  $("#gateState").className = "tag " + (served ? (cid ? "" : "warn") : "bad");
+  if (!cid && served) $("#gateSetupBox").classList.remove("hide");
 
-  $("#gState").textContent = !served ? "로컬 파일로 열림 — 연결 불가"
-    : t ? "연결됨" : (GAuth.clientId() ? "연결 안 됨" : "클라이언트 ID 미설정");
-  $("#gState").className = "tag " + (t ? "ok" : served ? "warn" : "bad");
-  $("#gConnect").classList.toggle("hide", !!t);
+  // 헤더
+  $("#who").innerHTML = u ? `<b>${esc(u.email)}</b>` : "";
   $("#gLogout").classList.toggle("hide", !t);
+
+  // 2. 단계 목록 — 드라이브 읽기
+  $("#gState").textContent = !served ? "로컬 파일로 열림 — 연결 불가"
+    : t ? `연결됨 — ${u.email}` : "연결이 만료되었습니다";
+  $("#gState").className = "tag " + (t ? "ok" : served ? "warn" : "bad");
+  $("#gRelogin").classList.toggle("hide", !served || !!t);
   $("#gRead").disabled = !t || !presentationId($("#cDocUrl").value);
-  $("#gClientId").value = GAuth.clientId();
+
+  $("#gClientId").value = cid;
+  $("#gDataFile").value = Drive.fileId();
+  $("#gDataFileState").textContent = Drive.fileId()
+    ? "이 파일만 씁니다. 지정 해제하면 다시 이름으로 찾습니다."
+    : `비어 있음 — 드라이브의 「${DATA_FOLDER}」 폴더에서 ${DATA_FILE} 을 찾습니다.`;
 
   $("#gRedirect").textContent = served ? GAuth.redirectUri() : "(없음 — 서버로 띄워야 생깁니다)";
   $("#gOrigin").textContent   = served ? location.origin      : "(없음)";
@@ -1239,23 +1444,36 @@ function syncG() {
     : GAuth.isLocalhost() ? "지금은 로컬 서버로 열려 있습니다. 배포 후에는 배포 도메인으로 한 번 더 등록해야 합니다."
     : "배포 도메인으로 열려 있습니다.";
 }
-$("#gSetup").onclick  = () => $("#gSetupBox").classList.toggle("hide");
+$("#gateSetup").onclick = () => $("#gateSetupBox").classList.toggle("hide");
 $("#gSaveId").onclick = () => {
-  GAuth.setClientId($("#gClientId").value); syncG();
-  $("#gErr").textContent = "";
-  $("#gErr").innerHTML = GAuth.clientId()
-    ? '<span class="tag ok">클라이언트 ID 저장됨</span>' : "";
+  GAuth.setClientId($("#gClientId").value);
+  syncG();
+  gateErr(GAuth.clientId() ? "" : "클라이언트 ID 를 입력하세요.");
 };
+$("#gSaveFile").onclick = () => {
+  const v = $("#gDataFile").value.trim();
+  if (!v) { Drive.clearFileId(); syncG(); return; }
+  if (!Drive.setFileId(v)) { gateErr("드라이브 링크나 파일 ID 를 인식하지 못했습니다."); return; }
+  gateErr(""); syncG();
+};
+$("#gClearFile").onclick = () => { Drive.clearFileId(); $("#gDataFile").value = ""; syncG(); };
 $("#gCopyRedirect").onclick = async () => {
   try { await navigator.clipboard.writeText(GAuth.redirectUri());
         $("#gCopyRedirect").textContent = "복사됨";
         setTimeout(() => $("#gCopyRedirect").textContent = "복사", 1500); }
-  catch(e) { $("#gErr").textContent = "복사하지 못했습니다. 위 값을 직접 선택해 복사하세요."; }
+  catch(e) { gateErr("복사하지 못했습니다. 위 값을 직접 선택해 복사하세요."); }
 };
-$("#gConnect").onclick = async () => {
-  try { await GAuth.begin(); } catch(e) { $("#gErr").textContent = e.message; $("#gSetupBox").classList.remove("hide"); }
+const connect = async () => {
+  try { gateErr(""); await GAuth.begin(); }
+  catch(e) { gateErr(e.message); $("#gateSetupBox").classList.remove("hide"); }
 };
-$("#gLogout").onclick = () => { GAuth.clear(); syncG(); };
+$("#gateConnect").onclick = connect;
+$("#gRelogin").onclick    = connect;
+$("#gLogout").onclick = () => {
+  GAuth.clear();
+  DataSource.clear();          // 로그아웃하면 화면에 남은 데이터도 지운다
+  location.href = GAuth.redirectUri();
+};
 $("#gRead").onclick = async () => {
   const id = presentationId($("#cDocUrl").value);
   $("#gErr").textContent = ""; $("#gResult").innerHTML = '<span class="muted">읽는 중…</span>';
@@ -1278,13 +1496,36 @@ $("#exportSteps").onclick = () => {
 };
 
 /* ══════════════════════════════════════════════════════════════════ 이벤트 */
-$("#pickDb").onclick = () => $("#fileDb").click();
-$("#fileDb").onchange = async e => {
-  const f = e.target.files[0];
-  if (f) try { bootDb(await DataSource.fromFile(f)); } catch(err) { $("#err").textContent = "불러오지 못했습니다 — " + err.message; }
+/** 드라이브에서 기준 데이터를 받아 화면을 세운다. */
+async function loadFromDrive() {
+  $("#err").textContent = "";
+  $("#dbState").textContent = "드라이브에서 불러오는 중…";
+  try {
+    const { payload, file } = await DataSource.fromDrive();
+    DRIVE_FILE = file;
+    bootDb(payload);
+    return true;
+  } catch(e) {
+    DRIVE_FILE = null;
+    $("#dbState").textContent = "기준 데이터 없음";
+    $("#err").textContent = e.message;
+    $("#dbSource").textContent = "";
+    showTab("data");
+    return false;
+  }
+}
+$("#reloadDb").onclick = () => { DataSource.clear(); loadFromDrive(); };
+
+/* 예비 경로 — 이미 파일을 가진 사람이 직접 넣는다. */
+const takeFile = errSel => async f => {
+  try { DRIVE_FILE = null; bootDb(await DataSource.fromFile(f)); showGate(false); $(errSel).textContent = ""; }
+  catch(err) { $(errSel).textContent = "불러오지 못했습니다 — " + err.message; }
 };
-$("#clearDb").onclick = () => { DataSource.clear(); location.reload(); };
-bindDrop("#dropDb", async f => { try { bootDb(await DataSource.fromFile(f)); } catch(err) { $("#err").textContent = "불러오지 못했습니다 — " + err.message; } });
+$("#pickDb").onclick   = () => $("#fileDb").click();
+$("#fileDb").onchange  = e => { const f = e.target.files[0]; if (f) takeFile("#err")(f); };
+$("#pickGate").onclick = () => $("#fileDb").click();
+bindDrop("#dropDb",   takeFile("#err"));
+bindDrop("#dropGate", takeFile("#gateFileErr"));
 
 $("#pickSteps").onclick = () => $("#fileSteps").click();
 $("#fileSteps").onchange = async e => {
@@ -1309,7 +1550,7 @@ $("#cDocUrl").oninput = () => { syncDoc(); syncG(); };
 $("#openDoc").onclick = () => window.open($("#cDocUrl").value, "_blank", "noopener");
 $("#cProject").oninput = () => { renderResult(); $("#docHint").textContent = ""; };
 $("#fillDoc").onclick = () => {
-  if (!DB) { $("#docHint").textContent = "먼저 「데이터」 탭에서 projects.json 을 불러오세요."; return; }
+  if (!DB) { $("#docHint").textContent = "기준 데이터가 없습니다. 「데이터」 → 「드라이브에서 다시 불러오기」 를 눌러 주세요."; return; }
   const p = DB.projects.find(x => pkey(x.match_key) === pkey($("#cProject").value));
   if (!p) { $("#docHint").textContent = "과거 DB에 같은 이름의 프로젝트가 없습니다."; return; }
   const want = $("#cDocType").value === "rough" ? p.docs?.rough : p.docs?.detail;
@@ -1355,20 +1596,45 @@ $$("#tbl thead th.srt").forEach(th => th.onclick = () => {
 });
 addEventListener("hashchange", route);
 
-const cached = DataSource.cached();
-if (cached) { try { DataSource.validate(cached); bootDb(cached); } catch(e) { DataSource.clear(); } }
-else showTab("data");
+/* ══════════════════════════════════════════════════════════════════ 부팅 순서
+   ?code= 처리 → 도메인 확인 → 관문 통과 시 드라이브에서 기준 데이터 자동 로드 */
+(async function boot() {
+  // 이전 버전이 localStorage 에 남긴 평문 데이터를 지운다. 이제 세션 저장소만 쓴다.
+  store.del(CACHE_KEY);
 
-// OAuth 리디렉션 처리 — ?code= 를 토큰으로 바꾸고 주소창을 정리한다
-(async () => {
   const p = new URLSearchParams(location.search);
-  if (p.get("error")) { $("#gErr").textContent = "구글 인증 거부: " + p.get("error"); }
-  else if (p.get("code")) {
-    try { await GAuth.finish(p.get("code")); }
-    catch(e) { $("#gErr").textContent = e.message; }
+  if (p.get("error")) {
+    gateErr("구글 인증 거부: " + p.get("error")
+      + (p.get("error") === "access_denied"
+          ? ` — @${ALLOWED_DOMAIN} 계정인지, 이 앱을 쓸 수 있는 계정인지 확인하세요.` : ""));
+    history.replaceState({}, "", GAuth.redirectUri() + location.hash);
+  } else if (p.get("code")) {
+    try { await GAuth.finish(p.get("code")); } catch(e) { gateErr(e.message); }
     history.replaceState({}, "", GAuth.redirectUri() + location.hash);
   }
+
+  // 도메인이 다른 계정이면 토큰을 버린다.
+  // 진짜 차단은 OAuth 「내부」 대상과 드라이브 공유 권한이 하고, 이건 안내다.
+  if (GAuth.token() && !GAuth.allowed()) {
+    const u = GAuth.user();
+    GAuth.clear();
+    DataSource.clear();
+    gateErr(`${u.email || "이 계정"} 으로는 사용할 수 없습니다. @${ALLOWED_DOMAIN} 계정으로 로그인하세요.`);
+  }
+
   syncG();
+
+  // 예비 경로로 이미 데이터를 넣어 둔 세션이면 그대로 이어서 쓴다.
+  const cached = DataSource.cached();
+  if (!GAuth.allowed()) {
+    if (cached) { try { DataSource.validate(cached); showGate(false); bootDb(cached); return; } catch(e) { DataSource.clear(); } }
+    showGate(true);
+    return;
+  }
+
+  showGate(false);
+  if (cached) { try { DataSource.validate(cached); bootDb(cached); return; } catch(e) { DataSource.clear(); } }
+  await loadFromDrive();
 })();
 </script>
 </body>
