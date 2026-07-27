@@ -8,7 +8,7 @@
  *   읽기 토큰을 받아낼 수 있다. 각자 「설정」에 한 번 넣는다.
  *   — OAUTH_SETUP.md 7번 「클라이언트 ID 를 리포에 넣지 않는다」
  */
-import { ALLOWED_DOMAIN, GSCOPE } from "./config";
+import { ALLOWED_DOMAIN, DEPLOY_CLIENT_ID, GSCOPE } from "./config";
 import { KEYS, store } from "./store";
 
 export interface TokenBox {
@@ -49,11 +49,22 @@ const b64url = (buf: ArrayBuffer | Uint8Array) =>
     .replace(/=+$/, "");
 
 export const GAuth = {
+  /**
+   * 배포용 ID 를 기본으로 쓰고, 브라우저에 저장된 값이 있으면 그것이 이긴다.
+   * 로컬 개발자가 자기 개발용 클라이언트로 갈아타는 경로다 (「설정」에서 입력).
+   */
   clientId(): string {
-    return store.get(KEYS.clientId) || "";
+    return store.get(KEYS.clientId) || DEPLOY_CLIENT_ID;
   },
+  /** 빈 값을 주면 저장된 값을 지우고 배포용 기본값으로 되돌린다. */
   setClientId(v: string) {
-    store.set(KEYS.clientId, v.trim());
+    const t = v.trim();
+    if (t) store.set(KEYS.clientId, t);
+    else store.del(KEYS.clientId);
+  },
+  /** 이 브라우저가 기본값 대신 직접 넣은 ID를 쓰고 있는지. */
+  clientIdOverridden(): boolean {
+    return !!store.get(KEYS.clientId);
   },
 
   /** 정적 내보내기 + trailingSlash 라 항상 https://<도메인>/ 형태가 된다. */
@@ -66,10 +77,6 @@ export const GAuth = {
   servedOverHttp(): boolean {
     if (typeof window === "undefined") return false;
     return location.protocol === "http:" || location.protocol === "https:";
-  },
-  isLocalhost(): boolean {
-    if (typeof window === "undefined") return false;
-    return /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   },
 
   token(): TokenBox | null {

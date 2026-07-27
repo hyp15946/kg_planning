@@ -6,6 +6,10 @@
  * 이 화면이 «막는» 것은 아니다. 실제 차단은 OAuth 「내부」 대상과
  * 드라이브 공유 권한이 하고, 여기서는 잘못된 계정으로 왔을 때 알려준다.
  * — OAUTH_SETUP.md 「접근 통제가 어디서 일어나는가」
+ *
+ * 클라이언트 ID 는 배포용 값이 코드에 들어 있어서(lib/config.ts) 쓰는 사람이
+ * 아무것도 입력하지 않는다. 아래 「개발자 설정」은 로컬 개발용 클라이언트로
+ * 갈아탈 때만 쓴다.
  */
 import { useEffect, useState } from "react";
 import { ALLOWED_DOMAIN, DATA_FILE, DATA_FOLDER } from "@/lib/config";
@@ -23,7 +27,7 @@ export function Gate({
   onFile: (f: File) => void;
 }) {
   const [setupOpen, setSetupOpen] = useState(false);
-  const [saved, setSaved] = useState<"" | "id" | "file">("");
+  const [savedTag, setSavedTag] = useState("");
   const [fallbackOpen, setFallbackOpen] = useState(false);
 
   /**
@@ -36,33 +40,30 @@ export function Gate({
    *  브라우저 전용 값을 마운트 후 한 번 읽는 것은 그 규칙이 겨냥한 경우가 아니다.)
    */
   const [env, setEnv] = useState({
+    ready: false,
     served: true,
     clientId: "",
+    overridden: false,
     dataFile: "",
     redirect: "",
     origin: "",
-    local: false,
   });
   useEffect(() => {
     const ok = GAuth.servedOverHttp();
-    const cid = GAuth.clientId();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 마운트 후 1회, 위 주석 참고
     setEnv({
+      ready: true,
       served: ok,
-      clientId: cid,
+      clientId: GAuth.clientId(),
+      overridden: GAuth.clientIdOverridden(),
       dataFile: Drive.fileId(),
       redirect: ok ? GAuth.redirectUri() : "",
       origin: ok ? location.origin : "",
-      local: GAuth.isLocalhost(),
     });
-    if (ok && !cid) setSetupOpen(true);
   }, []);
 
-  const { served, redirect, origin, local } = env;
-  const clientId = env.clientId;
-  const dataFile = env.dataFile;
-  const setClientId = (v: string) => setEnv((e) => ({ ...e, clientId: v }));
-  const setDataFile = (v: string) => setEnv((e) => ({ ...e, dataFile: v }));
+  const { served, clientId, overridden, dataFile, redirect, origin } = env;
+  const patch = (p: Partial<typeof env>) => setEnv((e) => ({ ...e, ...p }));
 
   const connect = async () => {
     try {
@@ -74,11 +75,7 @@ export function Gate({
     }
   };
 
-  const state = !served
-    ? { text: "로컬 파일 — 로그인 불가", tone: "bad" as const }
-    : clientId
-      ? { text: `@${ALLOWED_DOMAIN} 계정으로 로그인하세요`, tone: "plain" as const }
-      : { text: "클라이언트 ID 미설정 — 「설정」을 먼저 누르세요", tone: "warn" as const };
+  const canLogin = served && !!clientId;
 
   return (
     <div className="mx-auto max-w-[680px] px-5 py-16">
@@ -93,63 +90,77 @@ export function Gate({
 
       <Panel>
         <div className="flex flex-wrap items-center gap-2">
-          <Button primary onClick={connect} disabled={!served}>
+          <Button primary onClick={connect} disabled={!canLogin}>
             구글 계정으로 로그인
           </Button>
-          <Button small onClick={() => setSetupOpen((v) => !v)}>
-            설정
-          </Button>
-          <Tag tone={state.tone}>{state.text}</Tag>
+          {env.ready && !clientId && (
+            <Tag tone="warn">클라이언트 ID 가 없습니다 — 개발자 설정에서 넣으세요</Tag>
+          )}
+          {overridden && <Tag tone="warn">개발용 클라이언트 ID 사용 중</Tag>}
         </div>
 
         {error && <Callout tone="bad">{error}</Callout>}
 
-        {!served && (
+        {env.ready && !served && (
           <Callout tone="bad">
-            <b>이 파일을 컴퓨터에서 직접 열었습니다 (<code>file://</code>).</b> 구글 OAuth는
-            주소가 있는 페이지에서만 동작합니다. 지금은 주소가 없어서 구글에 등록할 리디렉션 URI
-            자체가 만들어지지 않습니다.
-            <div className="mt-2">아래를 실행하고 <code>http://localhost:8000/</code> 로 여세요.</div>
-            <pre className="mt-1.5 overflow-x-auto rounded-notion bg-page px-2 py-1.5 font-mono text-xs">
-              npm run dev
-            </pre>
+            <b>
+              이 파일을 컴퓨터에서 직접 열었습니다 (<code>file://</code>).
+            </b>{" "}
+            구글 OAuth는 주소가 있는 페이지에서만 동작합니다. 배포된 주소로 접속하거나,
+            개발 중이라면 <code>npm run dev</code> 로 띄우세요.
           </Callout>
         )}
 
+        <p className="mt-3 text-xs leading-relaxed text-faint">
+          로그인하면 기준 데이터를 드라이브에서 자동으로 불러옵니다. 따로 설정할 것이 없습니다.
+        </p>
+      </Panel>
+
+      {/* 로컬 개발용 — 평소에는 접혀 있다 */}
+      <div className="mt-4">
+        <button
+          type="button"
+          onClick={() => setSetupOpen((v) => !v)}
+          className="text-xs text-faint hover:text-dim"
+        >
+          {setupOpen ? "▾" : "▸"} 개발자 설정
+        </button>
+
         {setupOpen && (
-          <div className="mt-4 space-y-4 border-t border-line-soft pt-4">
-            <Field
-              label="OAuth 클라이언트 ID"
-              hint="— 각자 한 번 넣습니다. 브라우저에만 저장되고 리포에는 넣지 않습니다"
-            >
+          <Panel className="mt-2">
+            <Callout tone="info">
+              배포용 클라이언트 ID 는 코드에 들어 있어서 <b>보통 여기를 건드릴 일이 없습니다.</b>{" "}
+              로컬에서 개발할 때 <b>localhost 가 등록된 개발용 클라이언트</b>로 갈아탈 때만 씁니다.
+              여기에 넣은 값은 이 브라우저에만 저장되고 리포·배포물에는 들어가지 않습니다.
+            </Callout>
+
+            <Field label="OAuth 클라이언트 ID" hint="— 비우고 저장하면 배포용 기본값으로 돌아갑니다">
               <div className="flex flex-wrap gap-2">
                 <input
                   className="nx-input flex-1 min-w-[260px] font-mono text-xs"
                   placeholder="xxxxxxxx.apps.googleusercontent.com"
                   value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
+                  onChange={(e) => patch({ clientId: e.target.value })}
                 />
                 <Button
                   small
                   onClick={() => {
                     GAuth.setClientId(clientId);
-                    setClientId(GAuth.clientId());
-                    setSaved("id");
-                    onError(GAuth.clientId() ? "" : "클라이언트 ID 를 입력하세요.");
+                    patch({
+                      clientId: GAuth.clientId(),
+                      overridden: GAuth.clientIdOverridden(),
+                    });
+                    setSavedTag("클라이언트 ID 저장됨");
+                    onError("");
                   }}
                 >
                   저장
                 </Button>
               </div>
-              {saved === "id" && GAuth.clientId() && (
-                <span className="mt-1 inline-block">
-                  <Tag tone="ok">저장됨</Tag>
-                </span>
-              )}
             </Field>
 
-            <div className="border-t border-line-soft pt-3">
-              <div className="mb-2 text-sm font-semibold">구글 콘솔에 등록할 값</div>
+            <div className="mt-4 border-t border-line-soft pt-3">
+              <div className="mb-2 text-sm font-semibold">이 주소로 등록해야 하는 값</div>
               <div className="space-y-2">
                 <div>
                   <div className="mb-1 text-xs text-dim">승인된 JavaScript 원본</div>
@@ -169,7 +180,7 @@ export function Gate({
                       onClick={async () => {
                         try {
                           await navigator.clipboard.writeText(GAuth.redirectUri());
-                          setSaved("file");
+                          setSavedTag("리디렉션 URI 복사됨");
                           onError("");
                         } catch {
                           onError("복사하지 못했습니다. 위 값을 직접 선택해 복사하세요.");
@@ -181,16 +192,9 @@ export function Gate({
                   </div>
                 </div>
               </div>
-              {served && (
-                <p className="mt-2 text-xs text-faint">
-                  {local
-                    ? "지금은 로컬 서버로 열려 있습니다. 배포 후에는 배포 도메인으로 한 번 더 등록해야 합니다."
-                    : "배포 도메인으로 열려 있습니다."}
-                </p>
-              )}
             </div>
 
-            <div className="border-t border-line-soft pt-3">
+            <div className="mt-4 border-t border-line-soft pt-3">
               <Field
                 label="기준 데이터 파일"
                 hint="— 보통 비워 둡니다. 드라이브에서 이름으로 자동으로 찾습니다"
@@ -200,13 +204,14 @@ export function Gate({
                     className="nx-input flex-1 min-w-[260px] font-mono text-xs"
                     placeholder="projects.json 의 드라이브 링크 또는 파일 ID"
                     value={dataFile}
-                    onChange={(e) => setDataFile(e.target.value)}
+                    onChange={(e) => patch({ dataFile: e.target.value })}
                   />
                   <Button
                     small
                     onClick={() => {
                       if (!dataFile.trim()) {
                         Drive.clearFileId();
+                        setSavedTag("파일 지정 해제됨");
                         onError("");
                         return;
                       }
@@ -214,7 +219,8 @@ export function Gate({
                         onError("드라이브 링크나 파일 ID 를 인식하지 못했습니다.");
                         return;
                       }
-                      setDataFile(Drive.fileId());
+                      patch({ dataFile: Drive.fileId() });
+                      setSavedTag("파일 ID 저장됨");
                       onError("");
                     }}
                   >
@@ -224,7 +230,8 @@ export function Gate({
                     small
                     onClick={() => {
                       Drive.clearFileId();
-                      setDataFile("");
+                      patch({ dataFile: "" });
+                      setSavedTag("파일 지정 해제됨");
                     }}
                   >
                     지정 해제
@@ -238,18 +245,17 @@ export function Gate({
               </p>
             </div>
 
-            <p className="border-t border-line-soft pt-3 text-xs leading-relaxed text-faint">
-              설정 절차는 <code>OAUTH_SETUP.md</code>. 콘솔 메뉴는{" "}
-              <b>Google Auth Platform → Clients</b> 입니다. <b>Slides API 와 Drive API 를 모두</b>{" "}
-              켜야 하고, 스코프는 <code>presentations.readonly</code> · <code>drive.readonly</code> ·{" "}
-              <code>openid</code> · <code>email</code> 입니다.
-            </p>
-          </div>
+            {savedTag && (
+              <div className="mt-3">
+                <Tag tone="ok">{savedTag}</Tag>
+              </div>
+            )}
+          </Panel>
         )}
-      </Panel>
+      </div>
 
       {/* 드라이브를 쓸 수 없을 때의 예비 경로 */}
-      <div className="mt-4">
+      <div className="mt-2">
         <button
           type="button"
           onClick={() => setFallbackOpen((v) => !v)}
