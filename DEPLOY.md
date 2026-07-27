@@ -64,14 +64,18 @@ npm run build && npx serve out -l 8000
 [console.cloud.google.com/auth/clients](https://console.cloud.google.com/auth/clients)
 → **배포용** 클라이언트 → 아래 두 개를 등록한다.
 
-| 항목 | 값 |
-|---|---|
-| 승인된 JavaScript 원본 | `https://kg-planning.vercel.app` |
-| 승인된 리디렉션 URI | `https://kg-planning.vercel.app/` |
+| 항목 | 값 | 끝의 `/` |
+|---|---|---|
+| 승인된 JavaScript 원본 | `https://kg-planning.vercel.app` | **없음** |
+| 승인된 리디렉션 URI | `https://kg-planning.vercel.app/` | **있음** |
 
-**리디렉션 URI 는 끝의 `/` 까지 정확히 맞아야 한다.** 직접 타이핑하지 말고,
-배포된 사이트의 **「개발자 설정」** 안에 표시된 값의 **「복사」** 버튼을 쓴다.
-사이트가 자기 주소로 만든 값이므로 그것이 정답이다.
+> ⚠ **두 칸의 값이 다르다.** 원본 칸은 구글이 슬래시를 거부하므로 슬래시 없는 값을 넣게
+> 되는데, 그걸 리디렉션 칸에도 그대로 복사하면 **`redirect_uri_mismatch`** 가 난다.
+> 구글은 리디렉션 URI 를 문자 단위로 비교하므로 슬래시 하나가 다른 URI 다.
+> 앱은 항상 슬래시가 붙은 쪽을 보낸다.
+
+직접 타이핑하지 말고, 배포된 사이트의 **「개발자 설정」** 안에 표시된 값의 **「복사」**
+버튼을 쓴다. 사이트가 자기 주소로 만든 값이므로 그것이 정답이다.
 
 > 반영에 **5분에서 몇 시간**까지 걸린다. 바로 안 되면 기다렸다 다시 해본다.
 > 급하게 여러 번 고치면 무엇이 문제였는지 알 수 없게 된다.
@@ -128,7 +132,7 @@ export const DEPLOY_CLIENT_ID = "xxxxxxxx.apps.googleusercontent.com";
 | 증상 | 원인 |
 |---|---|
 | **빌드 실패** | 로컬에서 `npm run build` 로 먼저 재현한다. 대개 타입 오류다 |
-| `redirect_uri_mismatch` | 배포 도메인을 등록하지 않았거나, Preview 주소로 접속했다 (2·3번) |
+| `redirect_uri_mismatch` | **리디렉션 URI 끝의 `/` 가 빠진 경우가 가장 많다** (3번). 그 외엔 Preview 주소로 접속했거나 도메인 미등록 |
 | `origin_mismatch` | 승인된 JavaScript 원본을 안 넣었다 (3번) |
 | `access_denied` | Audience 가 「외부」다. 「내부」로 바꾼다 |
 | 로그인은 되는데 **「기준 데이터 없음」** | 폴더가 그 계정에 공유되지 않았다 (4번), 또는 Drive API 미설정 |

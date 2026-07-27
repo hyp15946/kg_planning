@@ -161,15 +161,42 @@ export function Gate({
 
             <div className="mt-4 border-t border-line-soft pt-3">
               <div className="mb-2 text-sm font-semibold">이 주소로 등록해야 하는 값</div>
+              <Callout tone="warn">
+                <b>두 칸의 값이 다릅니다.</b> 원본은 <b>슬래시 없이</b>, 리디렉션 URI는{" "}
+                <b>슬래시를 붙여서</b> 넣습니다. 같은 값을 양쪽에 넣으면{" "}
+                <code>redirect_uri_mismatch</code> 가 납니다 — 구글은 문자 단위로 정확히 비교합니다.
+              </Callout>
               <div className="space-y-2">
                 <div>
-                  <div className="mb-1 text-xs text-dim">승인된 JavaScript 원본</div>
-                  <code className="block overflow-x-auto rounded-notion bg-hover px-2 py-1.5 font-mono text-xs">
-                    {origin || "(없음 — 서버로 띄워야 생깁니다)"}
-                  </code>
+                  <div className="mb-1 text-xs text-dim">
+                    승인된 JavaScript 원본 <span className="text-faint">— 끝에 / 없음</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <code className="flex-1 min-w-[220px] overflow-x-auto rounded-notion bg-hover px-2 py-1.5 font-mono text-xs">
+                      {origin || "(없음 — 서버로 띄워야 생깁니다)"}
+                    </code>
+                    <Button
+                      small
+                      disabled={!served}
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(location.origin);
+                          setSavedTag("원본 복사됨");
+                          onError("");
+                        } catch {
+                          onError("복사하지 못했습니다. 위 값을 직접 선택해 복사하세요.");
+                        }
+                      }}
+                    >
+                      복사
+                    </Button>
+                  </div>
                 </div>
                 <div>
-                  <div className="mb-1 text-xs text-dim">승인된 리디렉션 URI</div>
+                  <div className="mb-1 text-xs text-dim">
+                    승인된 리디렉션 URI{" "}
+                    <span className="font-semibold text-warn">— 끝에 / 있음</span>
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <code className="flex-1 min-w-[220px] overflow-x-auto rounded-notion bg-hover px-2 py-1.5 font-mono text-xs">
                       {redirect || "(없음 — 서버로 띄워야 생깁니다)"}
@@ -190,6 +217,10 @@ export function Gate({
                       복사
                     </Button>
                   </div>
+                  <p className="mt-1 text-xs text-faint">
+                    앱이 로그인할 때 <b>이 값을 그대로</b> 보냅니다. 콘솔에 이것과 한 글자라도
+                    다르게 등록되어 있으면 로그인이 거부됩니다.
+                  </p>
                 </div>
               </div>
             </div>

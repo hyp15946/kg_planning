@@ -122,12 +122,22 @@ https://www.googleapis.com/auth/drive.readonly
 
 ### 6-1. 배포용 클라이언트 ★
 
-| 항목 | 값 |
-|---|---|
-| 애플리케이션 유형 | **웹 애플리케이션** |
-| 이름 | 예: `kigle-plan-deploy` |
-| 승인된 JavaScript 원본 | `https://kg-planning.vercel.app` |
-| 승인된 리디렉션 URI | `https://kg-planning.vercel.app/` |
+| 항목 | 값 | 끝의 `/` |
+|---|---|---|
+| 애플리케이션 유형 | **웹 애플리케이션** | |
+| 이름 | 예: `kigle-plan-deploy` | |
+| 승인된 JavaScript 원본 | `https://kg-planning.vercel.app` | **없음** |
+| 승인된 리디렉션 URI | `https://kg-planning.vercel.app/` | **있음** |
+
+> ### ⚠ 두 칸의 값이 다르다 — 가장 많이 걸리는 함정
+>
+> 원본 칸은 구글이 슬래시를 **거부**한다. 그래서 슬래시 없는 값을 넣게 되고,
+> 그걸 리디렉션 칸에도 그대로 복사하면 **`redirect_uri_mismatch`** 가 난다.
+> 구글은 리디렉션 URI 를 **문자 단위로 정확히** 비교하므로 슬래시 하나가 다른 URI 다.
+>
+> 앱은 항상 **슬래시가 붙은** `https://kg-planning.vercel.app/` 을 보낸다.
+> 불안하면 리디렉션 칸에 슬래시 있는 것과 없는 것을 **둘 다** 등록해도 된다
+> (리디렉션 URI 는 여러 개 등록할 수 있다).
 
 > ### ❌ 여기에 `localhost` 를 넣지 않는다
 >
@@ -297,7 +307,7 @@ REQUIREMENTS 3번의 판단이 그대로 돌아온다.
 | **리디렉션 URI 칸이 「(없음)」이다** | 서버로 띄우면 실제 주소가 표시된다 |
 | **「…으로는 사용할 수 없습니다」** | `@kiglestudio.com` 아닌 계정으로 로그인했다 |
 | **「…폴더의 projects.json 을 찾지 못했습니다」** | 폴더·파일 이름이 다르거나, 그 계정에 공유되지 않았다. 8번 참고 |
-| `redirect_uri_mismatch` | 등록한 URI가 사이트 표시값과 다르다. 화면 값을 그대로 복사 |
+| `redirect_uri_mismatch` | **끝의 `/` 가 빠진 경우가 가장 많다.** 원본 칸(슬래시 없음)과 리디렉션 칸(슬래시 있음)은 값이 다르다 — 6-1번 |
 | `origin_mismatch` | 승인된 JavaScript 원본을 안 넣었다 |
 | `access_denied` | 대상이 「외부」인데 테스트 사용자 미등록. 「내부」로 바꾼다 |
 | `Google Slides API has not been used...` | 2번에서 Slides API를 안 켰다 |
