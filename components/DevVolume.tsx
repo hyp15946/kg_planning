@@ -1,6 +1,10 @@
 "use client";
 
-/** 3. 개발 볼륨 — 단계 단위 (4.5) */
+/**
+ * 4. 개발 볼륨 — 단계 단위 (4.5)
+ * 산출 결과 아래에 온다. 기본은 「판단 필요」 단계만 보여서
+ * 사람이 골라야 하는 곳에 먼저 눈이 가고, 체크를 해제하면 전체가 보인다.
+ */
 import type { DevMark, GradeTables, Project, StepPart } from "@/lib/types";
 import { devKey, devPartTotal, gradeById, recommendDev, similarParts } from "@/lib/volume";
 import { Button, Callout, Check, Panel, ScrollX, Section, Select, Tag } from "./ui";
@@ -11,11 +15,12 @@ export function DevVolume({
   setMark,
   tables,
   projects,
-  onlyUnconfirmed,
-  setOnlyUnconfirmed,
+  onlyUndecided,
+  setOnlyUndecided,
   onConfirmAll,
   onUnconfirmAll,
   pending,
+  undecided,
   steps,
 }: {
   parts: StepPart[];
@@ -23,16 +28,17 @@ export function DevVolume({
   setMark: (key: string, patch: Partial<DevMark>) => void;
   tables: GradeTables | null;
   projects: Project[] | null;
-  onlyUnconfirmed: boolean;
-  setOnlyUnconfirmed: (v: boolean) => void;
+  onlyUndecided: boolean;
+  setOnlyUndecided: (v: boolean) => void;
   onConfirmAll: () => void;
   onUnconfirmAll: () => void;
   pending: number;
+  undecided: number;
   steps: number;
 }) {
   return (
     <Section
-      n="3"
+      n="4"
       title="개발 볼륨 — 단계 단위"
       hint="— 4.5: 게임 단위로 뭉개면 −46%, 단계 단위면 +2%"
     >
@@ -40,14 +46,17 @@ export function DevVolume({
         <Tag tone={pending ? "warn" : "ok"}>
           {pending ? `미확정 ${pending} / 전체 ${steps}` : `전부 확정 (${steps})`}
         </Tag>
+        {undecided > 0 && <Tag tone="bad">판단 필요 {undecided}</Tag>}
         <Button small onClick={onConfirmAll}>
           추천값 전체 확정
         </Button>
         <Button small onClick={onUnconfirmAll}>
           전체 미확정으로
         </Button>
-        <Check checked={onlyUnconfirmed} onChange={setOnlyUnconfirmed}>
-          <span className="text-dim">미확정·판단 필요만 보기</span>
+        <Check checked={onlyUndecided} onChange={setOnlyUndecided}>
+          <span className="text-dim">
+            판단 필요 항목만 보기 <span className="text-faint">— 해제하면 전체 단계</span>
+          </span>
         </Check>
       </div>
 
@@ -60,7 +69,7 @@ export function DevVolume({
             setMark={setMark}
             tables={tables}
             projects={projects}
-            onlyUnconfirmed={onlyUnconfirmed}
+            onlyUndecided={onlyUndecided}
           />
         ))}
       </div>
@@ -74,14 +83,14 @@ function PartTable({
   setMark,
   tables,
   projects,
-  onlyUnconfirmed,
+  onlyUndecided,
 }: {
   part: StepPart;
   marks: Record<string, DevMark>;
   setMark: (key: string, patch: Partial<DevMark>) => void;
   tables: GradeTables | null;
   projects: Project[] | null;
-  onlyUnconfirmed: boolean;
+  onlyUndecided: boolean;
 }) {
   const t = devPartTotal(part, marks, tables);
   const gauge = similarParts(part, projects);
@@ -92,7 +101,8 @@ function PartTable({
       const m = marks[key] ?? { gradeId: null, confirmed: false };
       const rec = recommendDev(st);
       const ambiguous = rec.ids.length > 1 && !m.confirmed;
-      if (onlyUnconfirmed && m.confirmed && !ambiguous) return null;
+      // 판단 필요 = 등급이 비어 있거나, 후보가 여럿인데 아직 확정하지 않은 단계
+      if (onlyUndecided && m.gradeId && !ambiguous) return null;
       const g = gradeById(tables, m.gradeId);
       const cands = rec.ids.map((i) => gradeById(tables, i)).filter(Boolean);
       return (
@@ -203,7 +213,9 @@ function PartTable({
             ) : (
               <tr>
                 <td colSpan={6} className="text-dim">
-                  표시할 행이 없습니다.
+                  {onlyUndecided
+                    ? "판단이 필요한 단계가 없습니다 — 「판단 필요 항목만 보기」를 해제하면 전체 단계가 보입니다."
+                    : "표시할 행이 없습니다."}
                 </td>
               </tr>
             )}

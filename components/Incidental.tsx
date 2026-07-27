@@ -1,6 +1,10 @@
 "use client";
 
-/** 5. 부대 항목 — 러프 문서에서 읽히지 않는 고정 가산 (4.6) */
+/**
+ * 5. 부대 항목 — 러프 문서에서 읽히지 않는 고정 가산 (4.6)
+ * 디자인 열은 FEATURE_DESIGN 이 꺼진 동안 숨긴다 (lib/config.ts).
+ */
+import { FEATURE_DESIGN } from "@/lib/config";
 import type { IncidentalItem, IncidentalState, IncidentalStat } from "@/lib/types";
 import { Callout, Check, NumInput, Panel, ScrollX, Section } from "./ui";
 
@@ -43,7 +47,7 @@ export function Incidental({
                   <th className="w-14">사용</th>
                   <th>항목</th>
                   <th className="w-24 text-right">개발</th>
-                  <th className="w-24 text-right">디자인</th>
+                  {FEATURE_DESIGN && <th className="w-24 text-right">디자인</th>}
                   <th>과거 데이터 (확정값 아님)</th>
                 </tr>
               </thead>
@@ -70,17 +74,23 @@ export function Incidental({
                           onChange={(dev) => setState(k, { dev })}
                         />
                       </td>
-                      <td className="text-right">
-                        <NumInput
-                          step={0.1}
-                          value={st.design}
-                          onChange={(design) => setState(k, { design })}
-                        />
-                      </td>
+                      {FEATURE_DESIGN && (
+                        <td className="text-right">
+                          <NumInput
+                            step={0.1}
+                            value={st.design}
+                            onChange={(design) => setState(k, { design })}
+                          />
+                        </td>
+                      )}
                       <td className="text-xs leading-relaxed text-dim">
                         개발 {cite(v.dev)}
-                        <br />
-                        디자인 {cite(v.design)}
+                        {FEATURE_DESIGN && (
+                          <>
+                            <br />
+                            디자인 {cite(v.design)}
+                          </>
+                        )}
                       </td>
                     </tr>
                   );

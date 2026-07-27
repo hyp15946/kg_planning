@@ -10,7 +10,7 @@
  * ?code= 처리도, 리디렉션 URI 등록도 없다 — lib/gauth.ts 참고.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ALLOWED_DOMAIN, DATA_FILE, DATA_FOLDER } from "@/lib/config";
+import { ALLOWED_DOMAIN, DATA_FILE, DATA_FOLDER, FEATURE_DESIGN } from "@/lib/config";
 import { DataSource } from "@/lib/datasource";
 import type { DriveFile } from "@/lib/drive";
 import { buildCsv, buildExport, download, today } from "@/lib/exports";
@@ -58,7 +58,8 @@ export default function Page() {
   const [marks, setMarks] = useState<Record<string, DevMark>>({});
   const [design, setDesign] = useState<Record<string, DesignState>>({});
   const [incidental, setIncidental] = useState<Record<string, IncidentalState>>({});
-  const [onlyUnconfirmed, setOnlyUnconfirmed] = useState(false);
+  // 기본은 「판단 필요」만 보인다 — 사람이 골라야 하는 단계에 먼저 눈이 가게
+  const [onlyUndecided, setOnlyUndecided] = useState(true);
 
   const tables = db?.grade_tables ?? null;
   // ?? [] 를 그대로 쓰면 렌더마다 새 배열이 되어 아래 useMemo 가 매번 다시 돈다
@@ -181,7 +182,8 @@ export default function Page() {
               on: false,
               // 고정값 금지 항목은 0 에서 시작한다 — 사람이 넣게 만든다
               dev: v.fixed_value_forbidden ? 0 : (v.dev?.median ?? 0),
-              design: v.fixed_value_forbidden ? 0 : (v.design?.median ?? 0),
+              // 디자인은 화면에서 숨긴 동안 0 — 안 보이는 값이 내보내기에 섞이면 안 된다
+              design: FEATURE_DESIGN && !v.fixed_value_forbidden ? (v.design?.median ?? 0) : 0,
             },
           ]),
         ),
@@ -378,38 +380,8 @@ export default function Page() {
             틀렸다면 등급을 만지지 말고 단계 목록부터 고치세요.
           </Callout>
 
-          <DevVolume
-            parts={parts}
-            marks={marks}
-            setMark={setMark}
-            tables={tables}
-            projects={db?.projects ?? null}
-            onlyUnconfirmed={onlyUnconfirmed}
-            setOnlyUnconfirmed={setOnlyUnconfirmed}
-            onConfirmAll={() =>
-              setMarks((m) =>
-                Object.fromEntries(
-                  Object.entries(m).map(([k, v]) => [k, { ...v, confirmed: !!v.gradeId }]),
-                ),
-              )
-            }
-            onUnconfirmAll={() =>
-              setMarks((m) =>
-                Object.fromEntries(Object.entries(m).map(([k, v]) => [k, { ...v, confirmed: false }])),
-              )
-            }
-            pending={t.pending}
-            steps={t.steps}
-          />
-
-          <DesignVolume parts={parts} design={design} setDesign={setDesignPart} />
-
-          <Incidental
-            items={db?.incidental_reference?.items ?? {}}
-            state={incidental}
-            setState={setIncidentalItem}
-          />
-
+          {/* 산출 결과를 단계 목록 바로 다음에 둔다 — 합계·경고부터 보고,
+              판단이 필요한 단계만 아래 개발 볼륨 표에서 마저 고른다 */}
           <Result
             parts={parts}
             marks={marks}
@@ -435,12 +407,48 @@ export default function Page() {
               );
             }}
           />
+
+          <DevVolume
+            parts={parts}
+            marks={marks}
+            setMark={setMark}
+            tables={tables}
+            projects={db?.projects ?? null}
+            onlyUndecided={onlyUndecided}
+            setOnlyUndecided={setOnlyUndecided}
+            onConfirmAll={() =>
+              setMarks((m) =>
+                Object.fromEntries(
+                  Object.entries(m).map(([k, v]) => [k, { ...v, confirmed: !!v.gradeId }]),
+                ),
+              )
+            }
+            onUnconfirmAll={() =>
+              setMarks((m) =>
+                Object.fromEntries(Object.entries(m).map(([k, v]) => [k, { ...v, confirmed: false }])),
+              )
+            }
+            pending={t.pending}
+            undecided={t.undecided}
+            steps={t.steps}
+          />
+
+          {/* 디자인 볼륨 산출은 미완성이라 숨겨 둔다 — lib/config.ts FEATURE_DESIGN */}
+          {FEATURE_DESIGN && (
+            <DesignVolume parts={parts} design={design} setDesign={setDesignPart} />
+          )}
+
+          <Incidental
+            items={db?.incidental_reference?.items ?? {}}
+            state={incidental}
+            setState={setIncidentalItem}
+          />
         </>
       )}
 
       {!steps && db && (
         <p className="mt-8 text-center text-sm text-faint">
-          단계 목록을 만들면 <Tag tone="dev">3~6</Tag> 산출 항목이 여기에 나타납니다.
+          단계 목록을 만들면 <Tag tone="dev">3~5</Tag> 산출 항목이 여기에 나타납니다.
         </p>
       )}
     </div>

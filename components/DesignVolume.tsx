@@ -1,6 +1,10 @@
 "use client";
 
-/** 4. 디자인 볼륨 — 파트 단위 가산 (4.4) */
+/**
+ * 디자인 볼륨 — 파트 단위 가산 (4.4)
+ * 아직 미완성이라 화면에서 숨겨 두었다 (lib/config.ts FEATURE_DESIGN).
+ * 다시 켤 때 구획 번호(n)를 그때의 순서에 맞춰 매길 것.
+ */
 import type { DesignState, StepPart } from "@/lib/types";
 import { designBreakdown, designDefault } from "@/lib/volume";
 import { Callout, Check, NumInput, Panel, Section, Select, Tag } from "./ui";

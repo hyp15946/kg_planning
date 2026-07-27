@@ -1,6 +1,11 @@
 "use client";
 
-/** 6. 산출 결과 — 스케쥴 문서 볼륨 칸에 그대로 옮길 수 있는 형태 */
+/**
+ * 3. 산출 결과 — 스케쥴 문서 볼륨 칸에 그대로 옮길 수 있는 형태.
+ * 단계 목록 바로 다음에 온다. 판단이 필요한 단계는 아래 「4. 개발 볼륨」에서 고른다.
+ * 디자인 볼륨 표시는 FEATURE_DESIGN 이 꺼진 동안 숨긴다 (lib/config.ts).
+ */
+import { FEATURE_DESIGN } from "@/lib/config";
 import type {
   DesignState,
   DevMark,
@@ -61,17 +66,17 @@ export function Result({
   const usedIncidental = Object.entries(incidental).filter(([, v]) => v.on);
 
   return (
-    <Section n="6" title="산출 결과" hint="— 스케쥴 문서 볼륨 칸에 그대로 옮길 수 있는 형태">
+    <Section n="3" title="산출 결과" hint="— 스케쥴 문서 볼륨 칸에 그대로 옮길 수 있는 형태">
       {t.undecided > 0 ? (
         <Callout tone="bad">
           <b>등급이 정해지지 않은 단계가 {t.undecided}개 있습니다.</b> 후보가 둘 이상이라 기본값을
-          넣지 않았습니다 — <b>이 단계들은 아래 합계에 들어가 있지 않습니다.</b> 사람이 골라야 숫자가
-          완성됩니다.
+          넣지 않았습니다 — <b>이 단계들은 합계에 들어가 있지 않습니다.</b> 아래{" "}
+          <b>「4. 개발 볼륨」</b> 표에서 골라야 숫자가 완성됩니다.
         </Callout>
       ) : t.pending > 0 ? (
         <Callout tone="bad">
-          <b>검수하지 않은 단계가 {t.pending}개 있습니다.</b> 아래 숫자는 추천값을 포함한 잠정치입니다.
-          전부 확정한 뒤 옮기세요.
+          <b>검수하지 않은 단계가 {t.pending}개 있습니다.</b> 지금 숫자는 추천값을 포함한 잠정치입니다.
+          아래 <b>「4. 개발 볼륨」</b> 표에서 전부 확정한 뒤 옮기세요.
         </Callout>
       ) : null}
 
@@ -83,13 +88,15 @@ export function Result({
           value={t.devAll.toFixed(1)}
           sub={`단계 ${t.dev.toFixed(1)} + 부대 ${t.incDev.toFixed(1)}`}
         />
-        <Kpi
-          label="디자인 볼륨"
-          hint="파트 가산 + 부대"
-          tone="des"
-          value={t.designAll.toFixed(1)}
-          sub={`파트 ${t.design.toFixed(1)} + 부대 ${t.incDes.toFixed(1)}`}
-        />
+        {FEATURE_DESIGN && (
+          <Kpi
+            label="디자인 볼륨"
+            hint="파트 가산 + 부대"
+            tone="des"
+            value={t.designAll.toFixed(1)}
+            sub={`파트 ${t.design.toFixed(1)} + 부대 ${t.incDes.toFixed(1)}`}
+          />
+        )}
         <Kpi label="단계 수" value={t.steps} sub={`파트 ${t.partN}개`} />
         <Kpi
           label="검수"
@@ -102,7 +109,9 @@ export function Result({
       {past && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Compare mine={t.devAll} theirs={past.dev_volume} label="개발" />
-          <Compare mine={t.designAll} theirs={past.design_volume} label="디자인" />
+          {FEATURE_DESIGN && (
+            <Compare mine={t.designAll} theirs={past.design_volume} label="디자인" />
+          )}
           <span className="text-xs text-faint">
             같은 이름의 과거 기록과 비교했습니다. 5% 밖이면 주의, 20% 이상이면 추출이 흔들린 것으로 봅니다.
           </span>
@@ -118,7 +127,7 @@ export function Result({
                 <th>파트명</th>
                 <th className="text-right">단계 수</th>
                 <th className="text-right">개발 볼륨</th>
-                <th className="text-right">디자인 볼륨</th>
+                {FEATURE_DESIGN && <th className="text-right">디자인 볼륨</th>}
                 <th>검수</th>
               </tr>
             </thead>
@@ -135,9 +144,11 @@ export function Result({
                       <span className="font-semibold text-dev">{d.total.toFixed(1)}</span>
                       {d.undecided > 0 && <span className="text-faint"> +?</span>}
                     </td>
-                    <td className="text-right tnum">
-                      <span className="font-semibold text-des">{b.total.toFixed(1)}</span>
-                    </td>
+                    {FEATURE_DESIGN && (
+                      <td className="text-right tnum">
+                        <span className="font-semibold text-des">{b.total.toFixed(1)}</span>
+                      </td>
+                    )}
                     <td>
                       {d.undecided > 0 ? (
                         <Tag tone="bad">등급 미정 {d.undecided}</Tag>
@@ -158,11 +169,13 @@ export function Result({
                   <td className="text-right tnum">
                     <span className="font-semibold text-dev">{(Number(v.dev) || 0).toFixed(1)}</span>
                   </td>
-                  <td className="text-right tnum">
-                    <span className="font-semibold text-des">
-                      {(Number(v.design) || 0).toFixed(1)}
-                    </span>
-                  </td>
+                  {FEATURE_DESIGN && (
+                    <td className="text-right tnum">
+                      <span className="font-semibold text-des">
+                        {(Number(v.design) || 0).toFixed(1)}
+                      </span>
+                    </td>
+                  )}
                   <td>
                     <Tag tone="warn">제안값 — 표준 미확정</Tag>
                   </td>
@@ -176,7 +189,9 @@ export function Result({
                 </td>
                 <td className="text-right tnum">{t.steps}</td>
                 <td className="text-right tnum text-dev">{t.devAll.toFixed(1)}</td>
-                <td className="text-right tnum text-des">{t.designAll.toFixed(1)}</td>
+                {FEATURE_DESIGN && (
+                  <td className="text-right tnum text-des">{t.designAll.toFixed(1)}</td>
+                )}
                 <td />
               </tr>
             </tfoot>

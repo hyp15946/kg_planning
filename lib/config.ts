@@ -34,6 +34,13 @@ export const DATA_FOLDER = "개발 볼륨 산출 데이터";
 export const DATA_FILE = "projects.json";
 
 /**
+ * 디자인 볼륨 산출은 아직 미완성이라 화면에서 숨긴다 (추후 추가 예정).
+ * 켜면 「디자인 볼륨」 구획과 산출 결과·부대 항목의 디자인 열이 함께 돌아온다.
+ * 그때 구획 번호를 순서대로 다시 매길 것.
+ */
+export const FEATURE_DESIGN = false;
+
+/**
  * 스코프 — 모두 읽기 전용이다.
  *  userinfo.email         로그인 계정의 이메일·도메인 확인
  *  presentations.readonly 기획서 슬라이드 읽기
