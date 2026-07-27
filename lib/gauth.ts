@@ -1,15 +1,20 @@
 /**
- * 구글 OAuth — 브라우저 전용, PKCE. 클라이언트 시크릿을 쓰지 않고
- * 외부 SDK 스크립트도 쓰지 않는다.
+ * 구글 로그인 — GIS(Google Identity Services) 토큰 모델.
  *
- * ⚠ 클라이언트 ID 를 이 파일에 기본값으로 박지 않는다. 시크릿은 아니지만,
- *   공개 리포에 올라간 ID + 같은 클라이언트에 등록된 localhost 리디렉션이
- *   맞물리면 남의 PC 로컬 페이지가 우리 ID로 로그인 흐름을 띄워 드라이브
- *   읽기 토큰을 받아낼 수 있다. 각자 「설정」에 한 번 넣는다.
- *   — OAUTH_SETUP.md 7번 「클라이언트 ID 를 리포에 넣지 않는다」
+ * ⚠ 왜 PKCE 인증 코드 흐름이 아닌가
+ *   구글의 «웹 애플리케이션» 클라이언트는 confidential client 로 취급되어,
+ *   PKCE 를 쓰더라도 토큰 교환에서 client_secret 을 요구한다
+ *   (`client_secret is missing`). 시크릿을 브라우저에 둘 수는 없고, 서버를 두면
+ *   「배포물에 지킬 데이터가 없다」는 접근 통제 전제가 무너진다.
+ *   그래서 구글이 브라우저 전용 앱에 제공하는 토큰 모델을 쓴다 —
+ *   시크릿도, 리디렉션 URI 도 필요 없고 「승인된 JavaScript 원본」만 본다.
+ *
+ * ⚠ 클라이언트 ID 를 이 파일에 기본값으로 박지 않는다 → lib/config.ts 참고.
  */
 import { ALLOWED_DOMAIN, DEPLOY_CLIENT_ID, GSCOPE } from "./config";
 import { KEYS, store } from "./store";
+
+const GIS_SRC = "https://accounts.google.com/gsi/client";
 
 export interface TokenBox {
   access_token: string;
@@ -23,35 +28,36 @@ export interface GUser {
   domain: string;
 }
 
-/**
- * ID 토큰의 payload 를 읽는다. 서명은 검증하지 않는다 —
- * 화면에 이메일을 띄우고 도메인이 다르면 안내하기 위한 용도일 뿐,
- * 이 값으로 권한을 주지 않는다.
- */
-export function decodeJwt(t: string | undefined): Record<string, unknown> | null {
-  try {
-    const b = String(t ?? "").split(".")[1];
-    if (!b) return null;
-    const raw = atob(b.replace(/-/g, "+").replace(/_/g, "/"));
-    const utf8 = decodeURIComponent(
-      [...raw].map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0")).join(""),
-    );
-    return JSON.parse(utf8);
-  } catch {
-    return null;
-  }
+/** GIS 가 콜백으로 주는 것 중 우리가 쓰는 부분. */
+interface TokenResponse {
+  access_token?: string;
+  expires_in?: number;
+  hd?: string;
+  error?: string;
+  error_description?: string;
 }
+interface TokenClient {
+  requestAccessToken: () => void;
+}
+interface GisNamespace {
+  accounts?: {
+    oauth2?: {
+      initTokenClient: (c: Record<string, unknown>) => TokenClient;
+      revoke?: (token: string, done?: () => void) => void;
+    };
+  };
+}
+const gis = (): GisNamespace["accounts"] | undefined =>
+  (window as unknown as { google?: GisNamespace }).google?.accounts;
 
-const b64url = (buf: ArrayBuffer | Uint8Array) =>
-  btoa(String.fromCharCode(...new Uint8Array(buf as ArrayBuffer)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+let scriptPromise: Promise<void> | null = null;
+let client: TokenClient | null = null;
+let clientKey = "";
 
 export const GAuth = {
   /**
    * 배포용 ID 를 기본으로 쓰고, 브라우저에 저장된 값이 있으면 그것이 이긴다.
-   * 로컬 개발자가 자기 개발용 클라이언트로 갈아타는 경로다 (「설정」에서 입력).
+   * 로컬 개발자가 자기 개발용 클라이언트로 갈아타는 경로다 (「개발자 설정」).
    */
   clientId(): string {
     return store.get(KEYS.clientId) || DEPLOY_CLIENT_ID;
@@ -61,22 +67,22 @@ export const GAuth = {
     const t = v.trim();
     if (t) store.set(KEYS.clientId, t);
     else store.del(KEYS.clientId);
+    client = null; // 다음 로그인에서 새 ID 로 다시 만든다
   },
   /** 이 브라우저가 기본값 대신 직접 넣은 ID를 쓰고 있는지. */
   clientIdOverridden(): boolean {
     return !!store.get(KEYS.clientId);
   },
 
-  /** 정적 내보내기 + trailingSlash 라 항상 https://<도메인>/ 형태가 된다. */
-  redirectUri(): string {
-    if (typeof window === "undefined") return "";
-    return location.origin + location.pathname;
-  },
-
-  /** file:// 로 열면 origin 이 "null" 이라 등록할 리디렉션 URI 자체가 없다. */
+  /** GIS 는 실제 origin 이 있어야 동작한다. file:// 로는 불가능하다. */
   servedOverHttp(): boolean {
     if (typeof window === "undefined") return false;
     return location.protocol === "http:" || location.protocol === "https:";
+  },
+
+  /** 구글 콘솔의 「승인된 JavaScript 원본」에 등록할 값. */
+  origin(): string {
+    return typeof window === "undefined" ? "" : location.origin;
   },
 
   token(): TokenBox | null {
@@ -100,62 +106,103 @@ export const GAuth = {
     return !!u && u.domain.toLowerCase() === ALLOWED_DOMAIN;
   },
 
-  async challenge(verifier: string) {
-    const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-    return b64url(d);
+  /**
+   * GIS 스크립트를 한 번만 붙인다.
+   * 팝업 차단을 피하려면 «클릭 전에» 끝나 있어야 하므로 화면 진입 시 부른다.
+   */
+  loadGis(): Promise<void> {
+    if (typeof window === "undefined") return Promise.resolve();
+    if (gis()?.oauth2) return Promise.resolve();
+    scriptPromise ??= new Promise<void>((resolve, reject) => {
+      const el = document.createElement("script");
+      el.src = GIS_SRC;
+      el.async = true;
+      el.onload = () => resolve();
+      el.onerror = () => {
+        scriptPromise = null;
+        reject(new Error("구글 로그인 스크립트를 불러오지 못했습니다. 네트워크를 확인하세요."));
+      };
+      document.head.appendChild(el);
+    });
+    return scriptPromise;
   },
 
-  /** 인증 페이지로 보낸다. 돌아오면 ?code= 가 붙는다. */
-  async begin() {
+  /**
+   * 로그인. **클릭 핸들러에서 곧바로** 불러야 한다 —
+   * 팝업은 사용자 제스처 안에서만 열린다.
+   */
+  signIn(done: (err?: string) => void) {
+    const oauth2 = gis()?.oauth2;
+    if (!oauth2) return done("구글 로그인 스크립트가 아직 준비되지 않았습니다. 잠시 후 다시 시도하세요.");
     const cid = this.clientId();
-    if (!cid) throw new Error("OAuth 클라이언트 ID 를 먼저 저장하세요. (설정)");
-    const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
-    store.set(KEYS.verifier, verifier, true);
-    const p = new URLSearchParams({
-      client_id: cid,
-      redirect_uri: this.redirectUri(),
-      response_type: "code",
-      scope: GSCOPE,
-      code_challenge: await this.challenge(verifier),
-      code_challenge_method: "S256",
-      access_type: "online",
-      prompt: "select_account",
-      hd: ALLOWED_DOMAIN, // 계정 선택 화면에 이 도메인 계정만 보여준다
-    });
-    location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + p;
+    if (!cid) return done("OAuth 클라이언트 ID 가 없습니다. (개발자 설정)");
+
+    if (!client || clientKey !== cid) {
+      clientKey = cid;
+      client = oauth2.initTokenClient({
+        client_id: cid,
+        scope: GSCOPE,
+        hd: ALLOWED_DOMAIN, // 계정 선택 화면을 이 도메인으로 제한한다
+        prompt: "select_account",
+        callback: (res: TokenResponse) => {
+          void this.accept(res).then(
+            () => done(),
+            (e: unknown) => done(e instanceof Error ? e.message : String(e)),
+          );
+        },
+        error_callback: (err: { type?: string; message?: string }) => {
+          done(
+            err?.type === "popup_closed"
+              ? "로그인 창이 닫혔습니다."
+              : err?.type === "popup_failed_to_open"
+                ? "로그인 창이 열리지 않았습니다. 팝업 차단을 해제하세요."
+                : err?.message || "로그인에 실패했습니다.",
+          );
+        },
+      });
+    }
+    client.requestAccessToken();
   },
 
-  /** 돌아온 뒤 code 를 토큰으로 교환한다. 시크릿 없이 PKCE 로만. */
-  async finish(code: string) {
-    const verifier = store.get(KEYS.verifier, true);
-    if (!verifier) throw new Error("인증 상태가 없습니다. 다시 연결해 주세요.");
-    const res = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: this.clientId(),
-        code,
-        code_verifier: verifier,
-        grant_type: "authorization_code",
-        redirect_uri: this.redirectUri(),
-      }),
-    });
-    const j = await res.json();
-    if (!res.ok) throw new Error(j.error_description || j.error || "토큰 교환 실패");
-    store.del(KEYS.verifier, true);
-    const c = decodeJwt(j.id_token) ?? {};
-    const email = String(c.email ?? "");
+  /** 받은 토큰으로 계정을 확인하고 세션에 저장한다. */
+  async accept(res: TokenResponse) {
+    if (res.error) throw new Error(res.error_description || res.error);
+    if (!res.access_token) throw new Error("액세스 토큰을 받지 못했습니다.");
+
+    const exp = Date.now() + ((res.expires_in ?? 3600) - 60) * 1000;
+    // 아직 저장하지 않은 토큰으로 계정을 조회한다
+    const who = await this.userinfo(res.access_token);
     store.set(
       KEYS.token,
       JSON.stringify({
-        access_token: j.access_token,
-        exp: Date.now() + (j.expires_in - 60) * 1000,
-        email,
+        access_token: res.access_token,
+        exp,
+        email: who.email,
         // hd 는 Workspace 계정에만 붙는다. 없으면 이메일에서 도메인을 떼어 쓴다.
-        domain: String(c.hd ?? "") || email.split("@")[1] || "",
+        domain: who.hd || res.hd || who.email.split("@")[1] || "",
       } satisfies TokenBox),
       true,
     );
+  },
+
+  async userinfo(accessToken: string): Promise<{ email: string; hd?: string }> {
+    const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: "Bearer " + accessToken },
+    });
+    if (!r.ok) throw new Error("계정 정보를 읽지 못했습니다 (HTTP " + r.status + ").");
+    const j = await r.json();
+    return { email: String(j.email ?? ""), hd: j.hd ? String(j.hd) : undefined };
+  },
+
+  /** 구글 쪽 승인도 함께 취소한다. 실패해도 로컬 토큰은 지운다. */
+  signOut() {
+    const t = this.token();
+    try {
+      if (t) gis()?.oauth2?.revoke?.(t.access_token);
+    } catch {
+      /* 무시 */
+    }
+    this.clear();
   },
 
   /** 구글 API 공통 호출. 흔한 실패를 사람이 읽을 수 있는 말로 바꾼다. */

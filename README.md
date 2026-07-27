@@ -55,7 +55,7 @@ lib/       계산·인증·드라이브 — DOM 을 모른다
 |---|---|
 | `lib/volume.ts` | **볼륨 계산 (순수 함수)** — `volume.test.ts` 로 검증 |
 | `lib/slides.ts` | 슬라이드 → 단계 후보 파싱 — `slides.test.ts` 로 검증 |
-| `lib/gauth.ts` | 구글 OAuth (PKCE) · 로그인 계정 도메인 확인 |
+| `lib/gauth.ts` | 구글 로그인 (GIS 토큰 모델) · 로그인 계정 도메인 확인 |
 | `lib/drive.ts` | 드라이브에서 `projects.json` 찾기·받기 |
 | `lib/datasource.ts` | 기준 데이터 로딩 · 세션 보관 |
 | `lib/config.ts` | `ALLOWED_DOMAIN` · `DATA_FOLDER` · `DATA_FILE` · 스코프 |
@@ -80,7 +80,7 @@ npm run dev        # http://localhost:8000
 
 | 명령 | 하는 일 |
 |---|---|
-| `npm run dev` | 개발 서버 (8000 포트 — OAuth 리디렉션 등록값과 맞춘 값) |
+| `npm run dev` | 개발 서버 (8000 포트 — OAuth 승인된 원본 등록값과 맞춘 값) |
 | `npm test` | 계산·파싱 로직 테스트 |
 | `npm run typecheck` | 타입 검사 |
 | `npm run lint` | 린트 |
@@ -105,8 +105,8 @@ GitHub → Vercel. Next.js 를 자동으로 알아본다. **환경변수는 없�
 
 놓치기 쉬운 것 세 개만 적어 둔다.
 
-- 배포 도메인을 **배포용** OAuth 클라이언트의 **승인된 JavaScript 원본**과
-  **승인된 리디렉션 URI**에 등록한다. 안 하면 사이트는 떠도 로그인이 안 된다
+- 배포 도메인을 **배포용** OAuth 클라이언트의 **승인된 JavaScript 원본**에 등록한다.
+  안 하면 사이트는 떠도 로그인이 안 된다. (리디렉션 URI 는 쓰지 않는다 — 팝업 로그인이다)
 - **Preview 배포 주소로는 로그인이 안 된다.** 커밋마다 주소가 바뀌어 OAuth 에 등록돼 있지
   않기 때문이다. 로그인 테스트는 고정된 Production 주소에서 한다
 - ❌ **배포용 클라이언트에 `localhost` 를 추가하지 않는다.** 아래 참고
@@ -116,13 +116,14 @@ GitHub → Vercel. Next.js 를 자동으로 알아본다. **환경변수는 없�
 쓰는 사람이 아무것도 입력하지 않도록 **배포용 클라이언트 ID 를 `lib/config.ts` 에 넣어 두었다.**
 공개 리포에 올라가지만, 클라이언트 ID 는 시크릿이 아니다 — 로그인할 때 주소창에 그대로 보인다.
 
-**위험은 «공개된 ID» + «등록된 localhost» 조합에서만 생긴다.** 그 조합이면 직원 PC 의
-`localhost` 에서 도는 악성 페이지가 우리 ID 로 로그인 흐름을 띄워 **그 사람 드라이브 전체
+**막는 것은 「승인된 JavaScript 원본」이다.** 우리 ID 로 로그인을 요청하려면 그 페이지가
+등록된 origin 에서 돌아야 한다. **위험은 «공개된 ID» + «등록된 localhost» 조합에서만 생긴다** —
+그 조합이면 직원 PC 의 `localhost` 에서 도는 악성 페이지가 우리 ID 로 **그 사람 드라이브 전체
 읽기 토큰**을 받아낼 수 있다.
 
 | | 배포용 | 로컬 개발용 |
 |---|---|---|
-| 등록된 리디렉션 | 배포 도메인만 | `localhost:8000` |
+| 등록된 원본 | 배포 도메인만 | `http://localhost:8000` |
 | ID 를 리포에 두는가 | **둔다** (`lib/config.ts`) | **안 둔다** |
 | 넣는 곳 | 코드 | 「개발자 설정」 (브라우저에만 저장) |
 

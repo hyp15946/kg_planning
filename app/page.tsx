@@ -4,9 +4,10 @@
  * 화면 전체의 상태를 여기서 들고 있다. 메인은 볼륨 산출 하나이고,
  * 과거 기록·데이터는 보조 화면으로만 연다.
  *
- * 부팅 순서: ?code= 처리 → 도메인 확인 → 관문 통과 시 드라이브에서 자동 로드.
- * ?code= 는 useSearchParams 대신 window.location 을 직접 읽는다 —
- * 정적 내보내기에서 Suspense 경계 없이 동작하고, 리디렉션 처리가 한 곳에 모인다.
+ * 부팅 순서: 도메인 확인 → 관문 통과 시 드라이브에서 자동 로드.
+ *
+ * 로그인은 GIS 토큰 모델(팝업)이라 페이지를 떠나지 않는다. 리디렉션이 없으므로
+ * ?code= 처리도, 리디렉션 URI 등록도 없다 — lib/gauth.ts 참고.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ALLOWED_DOMAIN, DATA_FILE, DATA_FOLDER } from "@/lib/config";
@@ -22,6 +23,7 @@ import type {
   ProjectsDb,
   StepsDoc,
 } from "@/lib/types";
+import { KEYS, store } from "@/lib/store";
 import { designDefault, devKey, initialDevMark, totals } from "@/lib/volume";
 import { DesignVolume } from "@/components/DesignVolume";
 import { DevVolume } from "@/components/DevVolume";
@@ -102,68 +104,53 @@ export default function Page() {
 
   /* ── 부팅 ────────────────────────────────────────────── */
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const p = new URLSearchParams(location.search);
-      const errParam = p.get("error");
-      const code = p.get("code");
+  /** 로그인 상태를 다시 읽어 관문을 통과시키고, 필요하면 데이터를 받아온다. */
+  const settle = useCallback(async () => {
+    // 도메인이 다른 계정이면 토큰을 버린다.
+    // 진짜 차단은 OAuth 「내부」 대상과 드라이브 공유 권한이 하고, 이건 안내다.
+    if (GAuth.token() && !GAuth.allowed()) {
+      const u = GAuth.user();
+      GAuth.clear();
+      DataSource.clear();
+      setGateErr(
+        `${u?.email || "이 계정"} 으로는 사용할 수 없습니다. @${ALLOWED_DOMAIN} 계정으로 로그인하세요.`,
+      );
+    }
 
-      if (errParam) {
-        setGateErr(
-          "구글 인증 거부: " +
-            errParam +
-            (errParam === "access_denied"
-              ? ` — @${ALLOWED_DOMAIN} 계정인지, 이 앱을 쓸 수 있는 계정인지 확인하세요.`
-              : ""),
-        );
-        history.replaceState({}, "", GAuth.redirectUri() + location.hash);
-      } else if (code) {
-        try {
-          await GAuth.finish(code);
-        } catch (e) {
-          setGateErr(e instanceof Error ? e.message : String(e));
-        }
-        history.replaceState({}, "", GAuth.redirectUri() + location.hash);
-      }
+    const ok = GAuth.allowed();
+    setLoggedIn(ok);
+    setEmail(GAuth.user()?.email ?? "");
 
-      // 도메인이 다른 계정이면 토큰을 버린다.
-      // 진짜 차단은 OAuth 「내부」 대상과 드라이브 공유 권한이 하고, 이건 안내다.
-      if (GAuth.token() && !GAuth.allowed()) {
-        const u = GAuth.user();
-        GAuth.clear();
+    // 예비 경로로 이미 넣어 둔 세션이면 그대로 이어서 쓴다
+    const cached = DataSource.cached();
+    let usedCache = false;
+    if (cached) {
+      try {
+        DataSource.validate(cached);
+        setDb(cached);
+        usedCache = true;
+      } catch {
         DataSource.clear();
-        setGateErr(
-          `${u?.email || "이 계정"} 으로는 사용할 수 없습니다. @${ALLOWED_DOMAIN} 계정으로 로그인하세요.`,
-        );
       }
+    }
 
-      if (!alive) return;
-      const ok = GAuth.allowed();
-      setLoggedIn(ok);
-      setEmail(GAuth.user()?.email ?? "");
-
-      // 예비 경로로 이미 넣어 둔 세션이면 그대로 이어서 쓴다
-      const cached = DataSource.cached();
-      let usedCache = false;
-      if (cached) {
-        try {
-          DataSource.validate(cached);
-          setDb(cached);
-          usedCache = true;
-        } catch {
-          DataSource.clear();
-        }
-      }
-
-      setGated(!ok && !usedCache);
-      setBooted(true);
-      if (ok && !usedCache) await loadFromDrive();
-    })();
-    return () => {
-      alive = false;
-    };
+    setGated(!ok && !usedCache);
+    setBooted(true);
+    if (ok && !usedCache) await loadFromDrive();
   }, [loadFromDrive]);
+
+  /**
+   * 부팅. 로그인 여부와 세션 데이터는 브라우저에만 있으므로 마운트 후에 읽는다 —
+   * 정적 내보내기라 빌드 시점 렌더에는 window·storage 가 없고, 렌더 중에 읽으면
+   * 하이드레이션 불일치가 난다.
+   * (set-state-in-effect 는 연쇄 렌더를 막으려는 규칙인데, 브라우저 전용 상태를
+   *  마운트 후 한 번 읽는 것은 그 규칙이 겨냥한 경우가 아니다.)
+   */
+  useEffect(() => {
+    store.del(KEYS.legacyVerifier, true); // 예전 PKCE 흐름이 남긴 값을 치운다
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 마운트 후 1회, 위 주석 참고
+    void settle();
+  }, [settle]);
 
   /* ── 단계 목록을 새로 받으면 확정값을 초기화한다 ────────── */
 
@@ -243,7 +230,9 @@ export default function Page() {
     );
 
   if (gated)
-    return <Gate error={gateErr} onError={setGateErr} onFile={takeFile} />;
+    return (
+      <Gate error={gateErr} onError={setGateErr} onFile={takeFile} onSignedIn={settle} />
+    );
 
   if (view === "db" && db) return <PastDb db={db} onBack={() => setView("calc")} />;
 
@@ -275,9 +264,9 @@ export default function Page() {
             <Button
               small
               onClick={() => {
-                GAuth.clear();
+                GAuth.signOut();
                 DataSource.clear();
-                location.href = GAuth.redirectUri();
+                location.reload();
               }}
             >
               연결 해제
@@ -358,7 +347,12 @@ export default function Page() {
         docType={docType}
         loggedIn={loggedIn}
         onSteps={applySteps}
-        onRelogin={() => GAuth.begin().catch((e) => setDataErr(String(e?.message ?? e)))}
+        onRelogin={() =>
+          GAuth.signIn((err) => {
+            setDataErr(err ?? "");
+            if (!err) void settle();
+          })
+        }
       />
 
       {steps && (

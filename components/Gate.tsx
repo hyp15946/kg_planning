@@ -21,14 +21,18 @@ export function Gate({
   error,
   onError,
   onFile,
+  onSignedIn,
 }: {
   error: string;
   onError: (m: string) => void;
   onFile: (f: File) => void;
+  onSignedIn: () => void;
 }) {
   const [setupOpen, setSetupOpen] = useState(false);
   const [savedTag, setSavedTag] = useState("");
   const [fallbackOpen, setFallbackOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [gisReady, setGisReady] = useState(false);
 
   /**
    * 브라우저 값은 마운트 뒤에 한 번 읽는다. 정적 내보내기라 빌드 시점에
@@ -45,7 +49,6 @@ export function Gate({
     clientId: "",
     overridden: false,
     dataFile: "",
-    redirect: "",
     origin: "",
   });
   useEffect(() => {
@@ -57,25 +60,37 @@ export function Gate({
       clientId: GAuth.clientId(),
       overridden: GAuth.clientIdOverridden(),
       dataFile: Drive.fileId(),
-      redirect: ok ? GAuth.redirectUri() : "",
       origin: ok ? location.origin : "",
     });
+    // 팝업 차단을 피하려면 클릭 «전에» 스크립트가 준비되어 있어야 한다
+    if (ok)
+      GAuth.loadGis().then(
+        () => setGisReady(true),
+        (e: unknown) => onError(e instanceof Error ? e.message : String(e)),
+      );
+    // onError 는 부모의 setState 라 안정적이다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const { served, clientId, overridden, dataFile, redirect, origin } = env;
+  const { served, clientId, overridden, dataFile, origin } = env;
   const patch = (p: Partial<typeof env>) => setEnv((e) => ({ ...e, ...p }));
 
-  const connect = async () => {
-    try {
-      onError("");
-      await GAuth.begin();
-    } catch (e) {
-      onError(e instanceof Error ? e.message : String(e));
-      setSetupOpen(true);
-    }
+  /** 팝업은 사용자 제스처 안에서만 열리므로 await 없이 곧바로 부른다. */
+  const connect = () => {
+    onError("");
+    setBusy(true);
+    GAuth.signIn((err) => {
+      setBusy(false);
+      if (err) {
+        onError(err);
+        if (/클라이언트 ID/.test(err)) setSetupOpen(true);
+        return;
+      }
+      onSignedIn();
+    });
   };
 
-  const canLogin = served && !!clientId;
+  const canLogin = served && !!clientId && gisReady && !busy;
 
   return (
     <div className="mx-auto max-w-[680px] px-5 py-16">
@@ -91,8 +106,11 @@ export function Gate({
       <Panel>
         <div className="flex flex-wrap items-center gap-2">
           <Button primary onClick={connect} disabled={!canLogin}>
-            구글 계정으로 로그인
+            {busy ? "로그인 창 확인 중…" : "구글 계정으로 로그인"}
           </Button>
+          {env.ready && served && !!clientId && !gisReady && (
+            <span className="text-xs text-faint">구글 로그인 준비 중…</span>
+          )}
           {env.ready && !clientId && (
             <Tag tone="warn">클라이언트 ID 가 없습니다 — 개발자 설정에서 넣으세요</Tag>
           )}
@@ -160,69 +178,35 @@ export function Gate({
             </Field>
 
             <div className="mt-4 border-t border-line-soft pt-3">
-              <div className="mb-2 text-sm font-semibold">이 주소로 등록해야 하는 값</div>
-              <Callout tone="warn">
-                <b>두 칸의 값이 다릅니다.</b> 원본은 <b>슬래시 없이</b>, 리디렉션 URI는{" "}
-                <b>슬래시를 붙여서</b> 넣습니다. 같은 값을 양쪽에 넣으면{" "}
-                <code>redirect_uri_mismatch</code> 가 납니다 — 구글은 문자 단위로 정확히 비교합니다.
-              </Callout>
-              <div className="space-y-2">
-                <div>
-                  <div className="mb-1 text-xs text-dim">
-                    승인된 JavaScript 원본 <span className="text-faint">— 끝에 / 없음</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <code className="flex-1 min-w-[220px] overflow-x-auto rounded-notion bg-hover px-2 py-1.5 font-mono text-xs">
-                      {origin || "(없음 — 서버로 띄워야 생깁니다)"}
-                    </code>
-                    <Button
-                      small
-                      disabled={!served}
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(location.origin);
-                          setSavedTag("원본 복사됨");
-                          onError("");
-                        } catch {
-                          onError("복사하지 못했습니다. 위 값을 직접 선택해 복사하세요.");
-                        }
-                      }}
-                    >
-                      복사
-                    </Button>
-                  </div>
-                </div>
-                <div>
-                  <div className="mb-1 text-xs text-dim">
-                    승인된 리디렉션 URI{" "}
-                    <span className="font-semibold text-warn">— 끝에 / 있음</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <code className="flex-1 min-w-[220px] overflow-x-auto rounded-notion bg-hover px-2 py-1.5 font-mono text-xs">
-                      {redirect || "(없음 — 서버로 띄워야 생깁니다)"}
-                    </code>
-                    <Button
-                      small
-                      disabled={!served}
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(GAuth.redirectUri());
-                          setSavedTag("리디렉션 URI 복사됨");
-                          onError("");
-                        } catch {
-                          onError("복사하지 못했습니다. 위 값을 직접 선택해 복사하세요.");
-                        }
-                      }}
-                    >
-                      복사
-                    </Button>
-                  </div>
-                  <p className="mt-1 text-xs text-faint">
-                    앱이 로그인할 때 <b>이 값을 그대로</b> 보냅니다. 콘솔에 이것과 한 글자라도
-                    다르게 등록되어 있으면 로그인이 거부됩니다.
-                  </p>
-                </div>
+              <div className="mb-2 text-sm font-semibold">구글 콘솔에 등록할 값</div>
+              <div className="mb-1 text-xs text-dim">
+                승인된 JavaScript 원본 <span className="text-faint">— 끝에 / 없이</span>
               </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <code className="flex-1 min-w-[220px] overflow-x-auto rounded-notion bg-hover px-2 py-1.5 font-mono text-xs">
+                  {origin || "(없음 — 서버로 띄워야 생깁니다)"}
+                </code>
+                <Button
+                  small
+                  disabled={!served}
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(location.origin);
+                      setSavedTag("원본 복사됨");
+                      onError("");
+                    } catch {
+                      onError("복사하지 못했습니다. 위 값을 직접 선택해 복사하세요.");
+                    }
+                  }}
+                >
+                  복사
+                </Button>
+              </div>
+              <p className="mt-1.5 text-xs leading-relaxed text-faint">
+                <b>이것만 등록하면 됩니다.</b> 로그인이 팝업으로 이뤄지므로{" "}
+                <b>「승인된 리디렉션 URI」는 쓰지 않습니다</b> — 비워 두어도 되고, 등록해 두었다면
+                그대로 두어도 무해합니다.
+              </p>
             </div>
 
             <div className="mt-4 border-t border-line-soft pt-3">

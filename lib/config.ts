@@ -13,7 +13,7 @@ export const ALLOWED_DOMAIN = "kiglestudio.com";
  * 배포용 OAuth 클라이언트 ID. 여기 박아 두어서 쓰는 사람이 입력하지 않아도 된다.
  *
  * ⚠⚠ 이 값을 리포에 두는 것이 안전한 조건은 딱 하나다 —
- *     **이 클라이언트에 localhost 리디렉션이 등록되어 있지 않을 것.**
+ *     **이 클라이언트의 「승인된 JavaScript 원본」에 localhost 가 없을 것.**
  *
  * 클라이언트 ID 자체는 시크릿이 아니다. 로그인할 때 주소창에 그대로 보이므로
  * 숨길 수도 없다. 위험은 «공개된 ID» + «등록된 localhost» 조합에서만 생긴다.
@@ -21,7 +21,7 @@ export const ALLOWED_DOMAIN = "kiglestudio.com";
  * 드라이브 읽기 토큰을 받아낼 수 있다 (OAUTH_SETUP.md 7번).
  *
  * 그래서 클라이언트를 둘로 나눈다.
- *   - 배포용 (이 값)  : 배포 도메인만 등록. localhost 절대 추가하지 않는다
+ *   - 배포용 (이 값)  : 배포 도메인만 원본 등록. localhost 절대 추가하지 않는다
  *   - 로컬 개발용     : localhost 등록. ID 를 리포에 넣지 않고 「개발자 설정」에 입력한다
  *
  * ❌ 이 클라이언트에 localhost 를 추가하지 마세요. 편해지는 대신 위 경로가 열립니다.
@@ -35,13 +35,16 @@ export const DATA_FILE = "projects.json";
 
 /**
  * 스코프 — 모두 읽기 전용이다.
- *  openid·email          로그인 계정의 도메인 확인
+ *  userinfo.email         로그인 계정의 이메일·도메인 확인
  *  presentations.readonly 기획서 슬라이드 읽기
  *  drive.readonly         projects.json 을 이름으로 찾아서 읽기
+ *
+ * GIS 토큰 모델은 ID 토큰을 주지 않으므로 openid 를 요청하지 않는다.
+ * 계정 확인은 userinfo 엔드포인트를 부른다 (lib/gauth.ts).
+ * 콘솔의 「email」 스코프가 곧 userinfo.email 이라 콘솔 설정은 그대로 두면 된다.
  */
 export const GSCOPE = [
-  "openid",
-  "email",
+  "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/presentations.readonly",
   "https://www.googleapis.com/auth/drive.readonly",
 ].join(" ");

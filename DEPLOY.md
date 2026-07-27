@@ -52,8 +52,8 @@ npm run build && npx serve out -l 8000
 3번에서 도메인을 등록하고 4번에서 ID 를 넣는다.
 
 > **Preview 배포 주소는 매번 바뀐다.** Vercel 은 커밋마다
-> `<프로젝트>-<해시>-<팀>.vercel.app` 을 새로 만든다. 그 주소는 OAuth 에 등록되어 있지
-> 않으므로 로그인이 안 된다 (`redirect_uri_mismatch`).
+> `<프로젝트>-<해시>-<팀>.vercel.app` 을 새로 만든다. 그 주소는 「승인된 JavaScript 원본」에
+> 없으므로 로그인이 안 된다.
 > **로그인 테스트는 항상 고정된 Production 주소에서 한다.**
 
 사내 도메인을 붙이려면 **Settings → Domains** 에서 추가한다.
@@ -64,18 +64,16 @@ npm run build && npx serve out -l 8000
 [console.cloud.google.com/auth/clients](https://console.cloud.google.com/auth/clients)
 → **배포용** 클라이언트 → 아래 두 개를 등록한다.
 
-| 항목 | 값 | 끝의 `/` |
-|---|---|---|
-| 승인된 JavaScript 원본 | `https://kg-planning.vercel.app` | **없음** |
-| 승인된 리디렉션 URI | `https://kg-planning.vercel.app/` | **있음** |
+| 항목 | 값 |
+|---|---|
+| 승인된 JavaScript 원본 | `https://kg-planning.vercel.app` ← **끝에 `/` 없이** |
+| 승인된 리디렉션 URI | **비워 둔다** |
 
-> ⚠ **두 칸의 값이 다르다.** 원본 칸은 구글이 슬래시를 거부하므로 슬래시 없는 값을 넣게
-> 되는데, 그걸 리디렉션 칸에도 그대로 복사하면 **`redirect_uri_mismatch`** 가 난다.
-> 구글은 리디렉션 URI 를 문자 단위로 비교하므로 슬래시 하나가 다른 URI 다.
-> 앱은 항상 슬래시가 붙은 쪽을 보낸다.
+> **리디렉션 URI 는 쓰지 않는다.** 로그인이 팝업으로 이뤄지므로 구글은
+> 「승인된 JavaScript 원본」만 확인한다. 예전에 등록해 둔 값이 있으면 지우지 않아도 무해하다.
 
 직접 타이핑하지 말고, 배포된 사이트의 **「개발자 설정」** 안에 표시된 값의 **「복사」**
-버튼을 쓴다. 사이트가 자기 주소로 만든 값이므로 그것이 정답이다.
+버튼을 쓴다.
 
 > 반영에 **5분에서 몇 시간**까지 걸린다. 바로 안 되면 기다렸다 다시 해본다.
 > 급하게 여러 번 고치면 무엇이 문제였는지 알 수 없게 된다.
@@ -93,9 +91,9 @@ export const DEPLOY_CLIENT_ID = "xxxxxxxx.apps.googleusercontent.com";
 
 이러면 **쓰는 사람이 아무것도 입력하지 않는다.** 열면 로그인 버튼만 있다.
 
-> ❌ **그 클라이언트에 `localhost` 를 추가하지 않는다.** ID 가 공개 리포에 올라가므로,
-> localhost 가 등록되어 있으면 남의 PC 로컬 페이지가 우리 ID 로 드라이브 읽기 토큰을
-> 받아낼 수 있다. 로컬 개발은 **별도 클라이언트**를 쓴다 — `OAUTH_SETUP.md` 6·7번.
+> ❌ **그 클라이언트의 승인된 원본에 `localhost` 를 추가하지 않는다.** ID 가 공개 리포에
+> 올라가므로, localhost 가 등록되어 있으면 남의 PC 로컬 페이지가 우리 ID 로 드라이브 읽기
+> 토큰을 받아낼 수 있다. 로컬 개발은 **별도 클라이언트**를 쓴다 — `OAUTH_SETUP.md` 6·7번.
 
 ## 5. 드라이브 폴더를 팀에 공유
 
@@ -114,7 +112,7 @@ export const DEPLOY_CLIENT_ID = "xxxxxxxx.apps.googleusercontent.com";
 | 확인 | 정상 |
 |---|---|
 | 배포 주소를 연다 | 「사내 전용」 로그인 화면 + 로그인 버튼이 눌리는 상태 |
-| 「개발자 설정」을 연다 | 리디렉션 URI 가 `https://kg-planning.vercel.app/` 로 표시 |
+| 「개발자 설정」을 연다 | 승인된 원본이 `https://kg-planning.vercel.app` 로 표시 |
 | 사내 계정으로 로그인 | 산출 화면 진입 + 헤더에 본인 이메일 |
 | 「데이터」를 연다 | `드라이브 — projects.json · 폴더 「개발 볼륨 산출 데이터」 · 수정 …` |
 | 사외 계정으로 로그인 | 화면이 잠기고 「@kiglestudio.com 계정으로 로그인하세요」 |
@@ -132,8 +130,8 @@ export const DEPLOY_CLIENT_ID = "xxxxxxxx.apps.googleusercontent.com";
 | 증상 | 원인 |
 |---|---|
 | **빌드 실패** | 로컬에서 `npm run build` 로 먼저 재현한다. 대개 타입 오류다 |
-| `redirect_uri_mismatch` | **리디렉션 URI 끝의 `/` 가 빠진 경우가 가장 많다** (3번). 그 외엔 Preview 주소로 접속했거나 도메인 미등록 |
-| `origin_mismatch` | 승인된 JavaScript 원본을 안 넣었다 (3번) |
+| `origin_mismatch` · 로그인 창이 곧 닫힌다 | 지금 접속한 주소가 「승인된 JavaScript 원본」에 없다 (3번). Preview 주소도 이 경우다 |
+| `client_secret is missing` | 예전 PKCE 흐름의 오류다. 지금은 GIS 토큰 모델이라 나지 않는다 — 브라우저 캐시를 지운다 |
 | `access_denied` | Audience 가 「외부」다. 「내부」로 바꾼다 |
 | 로그인은 되는데 **「기준 데이터 없음」** | 폴더가 그 계정에 공유되지 않았다 (4번), 또는 Drive API 미설정 |
 | **「권한 범위가 부족합니다」** | 스코프를 늘리기 전에 받은 토큰이다. 「연결 해제」 후 다시 로그인 |
@@ -147,9 +145,10 @@ export const DEPLOY_CLIENT_ID = "xxxxxxxx.apps.googleusercontent.com";
 npm run dev        # http://localhost:8000
 ```
 
-**여기서는 로그인이 안 된다.** 배포용 클라이언트에 `localhost` 가 등록되어 있지 않기
-때문이고, 그게 의도다 (4번). 로컬에서 로그인까지 확인해야 하면 **로컬 개발용 클라이언트**를
-따로 만들어 첫 화면의 **「개발자 설정」** 에 그 ID 를 넣는다 — `OAUTH_SETUP.md` 6-2·7번.
+**여기서는 로그인이 안 된다.** 배포용 클라이언트의 「승인된 JavaScript 원본」에
+`http://localhost:8000` 이 없기 때문이고, 그게 의도다 (4번). 로컬에서 로그인까지 확인해야 하면
+**로컬 개발용 클라이언트**를 따로 만들어 첫 화면의 **「개발자 설정」** 에 그 ID 를 넣는다 —
+`OAUTH_SETUP.md` 6·7번.
 
 로그인이 필요 없는 화면 작업이라면 「드라이브를 쓸 수 없을 때」로 `projects.json` 을
 직접 넣어 확인하는 편이 빠르다.

@@ -43,7 +43,8 @@ export const store = {
 export const KEYS = {
   clientId: "kigle-plan-db/gclient",
   token: "kigle-plan-db/gtoken",
-  verifier: "kigle-plan-db/gverifier",
   dataFile: "kigle-plan-db/gdatafile",
   projects: "kigle-plan-db/projects@1",
+  /** 예전 PKCE 흐름이 남긴 값. 부팅 때 지운다. */
+  legacyVerifier: "kigle-plan-db/gverifier",
 } as const;
