@@ -1,14 +1,14 @@
 # Vercel 배포 가이드
 
-정적 HTML 한 개다. 빌드도, 환경변수도, 서버도 없다.
+Next.js **정적 내보내기**다. 서버도 환경변수도 없고, 빌드 결과는 정적 파일뿐이다.
 **배포 자체는 5분이고, 나머지는 구글 설정이다.**
 
 ## 순서
 
 ```
-1. Vercel 에 리포 연결   ← Root Directory 를 deploy 로 지정하는 것이 핵심
+1. Vercel 에 리포 연결   ← 기본값 그대로 두면 된다
 2. 배포 도메인 확인
-3. 그 도메인을 OAuth 클라이언트에 등록
+3. 그 도메인을 OAuth 클라이언트에 등록   ← 여기까지 안 하면 로그인이 안 된다
 4. 드라이브 폴더를 팀에 공유
 5. 각자 클라이언트 ID 를 한 번 넣고 로그인
 ```
@@ -21,24 +21,27 @@
 
 [vercel.com](https://vercel.com) → **Add New → Project** → 이 리포 선택(**Import**).
 
-설정 화면에서 **한 가지만** 바꾼다.
+**바꿀 것이 없다.** Vercel 이 Next.js 를 알아보고 아래대로 잡는다.
 
 | 항목 | 값 |
 |---|---|
-| **Root Directory** | **`deploy`** ← 반드시 바꾼다 |
-| Framework Preset | `Other` (자동으로 잡힌다) |
-| Build Command | **비워 둔다** |
-| Output Directory | **비워 둔다** |
-| Install Command | **비워 둔다** |
+| Root Directory | **`./`** (리포 루트 — 기본값) |
+| Framework Preset | `Next.js` (자동) |
+| Build Command | `next build` (자동) |
+| Output Directory | 자동 |
 | Environment Variables | **없다** |
 
-`index.html` 이 리포 루트가 아니라 `deploy/` 안에 있다.
-Root Directory 를 안 바꾸면 배포는 성공하는데 **404** 가 뜬다.
+> `next.config.ts` 에 `output: "export"` 가 있으므로 결과물은 정적 파일이다.
+> Vercel 이 서버리스 함수를 만들지 않는다. **이 설정을 지우면 서버가 생기고,
+> «배포물에 지킬 데이터가 없다» 는 접근 통제의 전제가 무너진다** (`README.md` 「접근 통제」).
 
-> Root Directory 는 나중에도 바꿀 수 있다 — **Settings → Build and Deployment →
-> Root Directory**. 바꾼 뒤 재배포해야 반영된다.
+**Deploy** 를 누른다. 1분 안에 끝난다.
 
-**Deploy** 를 누른다. 빌드가 없으므로 20초 안에 끝난다.
+로컬에서 결과물을 미리 확인하려면:
+
+```bash
+npm run build && npx serve out -l 8000
+```
 
 ## 2. 배포 도메인 확인
 
@@ -116,7 +119,7 @@ Root Directory 를 안 바꾸면 배포는 성공하는데 **404** 가 뜬다.
 
 | 증상 | 원인 |
 |---|---|
-| **404** | Root Directory 가 `deploy` 가 아니다 (1번) |
+| **빌드 실패** | 로컬에서 `npm run build` 로 먼저 재현한다. 대개 타입 오류다 |
 | `redirect_uri_mismatch` | 배포 도메인을 등록하지 않았거나, Preview 주소로 접속했다 (2·3번) |
 | `origin_mismatch` | 승인된 JavaScript 원본을 안 넣었다 (3번) |
 | `access_denied` | Audience 가 「외부」다. 「내부」로 바꾼다 |
@@ -131,8 +134,11 @@ Root Directory 를 안 바꾸면 배포는 성공하는데 **404** 가 뜬다.
 `file://` 로 열면 OAuth 가 **동작하지 않는다.** 반드시 서버로 띄운다.
 
 ```bash
-python -m http.server 8000 --directory deploy
+npm run dev
 ```
 
-`http://localhost:8000/` 로 연다. `localhost` 는 HTTPS 가 아니어도 되지만,
+`http://localhost:8000/` 로 연다. 포트를 8000 으로 고정해 둔 이유는 OAuth 클라이언트에
+등록한 리디렉션 URI 와 맞춰야 하기 때문이다. 다른 포트로 띄우면 `redirect_uri_mismatch` 가 난다.
+
+`localhost` 는 HTTPS 가 아니어도 되지만,
 **배포 도메인은 반드시 HTTPS** 여야 한다 (Vercel 은 자동으로 HTTPS다).

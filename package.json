@@ -1,0 +1,36 @@
+{
+  "name": "kigle-plan-volume",
+  "version": "1.0.0",
+  "private": true,
+  "description": "기획서에서 개발/디자인 볼륨을 산출한다",
+  "scripts": {
+    "dev": "next dev -p 8000",
+    "build": "next build",
+    "start": "npx serve out -l 8000",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "next": "^16.2.12",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "overrides": {
+    "postcss": "^8.5.23",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "autoprefixer": "^10.5.4",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.2.12",
+    "postcss": "^8.5.23",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

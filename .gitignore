@@ -1,0 +1,15 @@
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# 기준 데이터는 리포에 넣지 않는다 (README 「이 리포에 없는 것」)
+projects.json
+steps*.json
+볼륨산출_*.json
+볼륨산출_*.csv
+
+.DS_Store
+.env*
+!.env.example

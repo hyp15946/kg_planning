@@ -41,25 +41,50 @@
 
 ## 구조
 
-정적 HTML 한 개다. 빌드도 프레임워크도 없다.
+Next.js **정적 내보내기**(`output: "export"`)다. 서버가 없고 빌드 결과는 정적 파일뿐이다.
+
+```
+app/       page.tsx — 화면 상태를 여기서 들고 있다
+components/  화면 조각 (구획별로 하나씩)
+lib/       계산·인증·드라이브 — DOM 을 모른다
+```
 
 | 파일 | 내용 |
 |---|---|
-| `index.html` | 화면 전부 |
+| `lib/volume.ts` | **볼륨 계산 (순수 함수)** — `volume.test.ts` 로 검증 |
+| `lib/slides.ts` | 슬라이드 → 단계 후보 파싱 — `slides.test.ts` 로 검증 |
+| `lib/gauth.ts` | 구글 OAuth (PKCE) · 로그인 계정 도메인 확인 |
+| `lib/drive.ts` | 드라이브에서 `projects.json` 찾기·받기 |
+| `lib/datasource.ts` | 기준 데이터 로딩 · 세션 보관 |
+| `lib/config.ts` | `ALLOWED_DOMAIN` · `DATA_FOLDER` · `DATA_FILE` · 스코프 |
 | `DEPLOY.md` | Vercel 배포 절차 |
 | `OAUTH_SETUP.md` | 구글 설정 (로그인 · 드라이브 · 슬라이드) |
 | `STEPS_SCHEMA.md` | `steps.json` 형식 |
 
-세 군데로 격리되어 있어 방식을 바꿀 때 그 객체만 교체하면 된다.
+계산 로직은 `lib/` 에 순수 함수로 있고 화면과 섞이지 않는다. 등급 규칙을 고칠 때는
+`lib/volume.ts` 와 그 테스트만 보면 된다.
 
-| 객체 | 담당 |
+찾을 위치나 허용 도메인을 바꾸려면 `lib/config.ts` 를 고친다.
+
+> ⚠ `next.config.ts` 의 `output: "export"` 를 지우지 않는다. 서버가 생기는 순간
+> «배포물에 지킬 데이터가 없다» 는 위 접근 통제의 전제가 무너진다.
+
+## 개발
+
+```bash
+npm install
+npm run dev        # http://localhost:8000
+```
+
+| 명령 | 하는 일 |
 |---|---|
-| `GAuth` | 구글 OAuth (PKCE) · 로그인 계정 도메인 확인 |
-| `Drive` | 드라이브에서 `projects.json` 찾기·받기 |
-| `DataSource` | 기준 데이터 로딩 · 세션 보관 |
+| `npm run dev` | 개발 서버 (8000 포트 — OAuth 리디렉션 등록값과 맞춘 값) |
+| `npm test` | 계산·파싱 로직 테스트 |
+| `npm run typecheck` | 타입 검사 |
+| `npm run lint` | 린트 |
+| `npm run build` | `out/` 에 정적 파일 생성 |
 
-찾을 위치를 바꾸려면 `index.html` 상단의 `DATA_FOLDER` · `DATA_FILE` 을,
-허용 도메인을 바꾸려면 `ALLOWED_DOMAIN` 을 고친다.
+`file://` 로 열면 OAuth 가 동작하지 않는다. 반드시 `npm run dev` 로 띄운다.
 
 ## 계산 방식
 
@@ -73,13 +98,14 @@
 
 ## 배포
 
-GitHub → Vercel. 브라우저만으로 된다. 빌드도 환경변수도 없다.
+GitHub → Vercel. Next.js 를 자동으로 알아본다. **환경변수는 없다.**
 **절차는 `DEPLOY.md`**, 구글 설정은 `OAUTH_SETUP.md`.
 
 놓치기 쉬운 것 세 개만 적어 둔다.
 
-- Vercel의 **Root Directory 를 `deploy` 로** 지정한다 (HTML이 리포 루트가 아니다 — 안 하면 404)
 - 배포 도메인을 OAuth 클라이언트의 **승인된 JavaScript 원본**과
   **승인된 리디렉션 URI**에 등록한다. 안 하면 사이트는 떠도 로그인이 안 된다
+- **Preview 배포 주소로는 로그인이 안 된다.** 커밋마다 주소가 바뀌어 OAuth 에 등록돼 있지
+  않기 때문이다. 로그인 테스트는 고정된 Production 주소에서 한다
 - **클라이언트 ID 는 리포에 넣지 않는다.** 시크릿은 아니지만 `localhost` 등록과 맞물리면
   드라이브 읽기 권한이 새는 경로가 생긴다 — `OAUTH_SETUP.md` 7번

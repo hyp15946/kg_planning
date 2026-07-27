@@ -1,0 +1,195 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  노션 팔레트를 그대로 쓴다. 순검정 대신 따뜻한 먹색(#37352f)을 쓰는 것이
+  노션 느낌의 핵심이고, 표가 많은 화면에서 눈이 덜 피로하다.
+*/
+:root {
+  --page: #ffffff;
+  --surface: #ffffff;
+  --hover: #f7f7f5;
+  --ink: #37352f;
+  --dim: #787774;
+  --faint: #9b9a97;
+  --line: #e9e9e7;
+  --line-soft: #f1f1ef;
+
+  --dev: #337ea9;
+  --des: #9065b0;
+  --ok: #448361;
+  --warn: #cb7b37;
+  --bad: #d44c47;
+
+  --dev-soft: #e7f3f8;
+  --des-soft: #f6f3f9;
+  --ok-soft: #edf3ec;
+  --warn-soft: #faebdd;
+  --bad-soft: #fdebec;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #191919;
+    --surface: #202020;
+    --hover: #252525;
+    --ink: #d4d4d4;
+    --dim: #9b9b9b;
+    --faint: #6f6f6f;
+    --line: #2f2f2f;
+    --line-soft: #262626;
+
+    --dev: #529cca;
+    --des: #9a6dd7;
+    --ok: #4dab9a;
+    --warn: #ffa344;
+    --bad: #ff7369;
+
+    --dev-soft: #1c2b33;
+    --des-soft: #2a2136;
+    --ok-soft: #1c2b26;
+    --warn-soft: #2f2213;
+    --bad-soft: #332020;
+  }
+}
+
+/* 사용자가 토글하면 미디어 쿼리를 이긴다 */
+:root[data-theme="light"] {
+  --page: #ffffff;
+  --surface: #ffffff;
+  --hover: #f7f7f5;
+  --ink: #37352f;
+  --dim: #787774;
+  --faint: #9b9a97;
+  --line: #e9e9e7;
+  --line-soft: #f1f1ef;
+  --dev: #337ea9;
+  --des: #9065b0;
+  --ok: #448361;
+  --warn: #cb7b37;
+  --bad: #d44c47;
+  --dev-soft: #e7f3f8;
+  --des-soft: #f6f3f9;
+  --ok-soft: #edf3ec;
+  --warn-soft: #faebdd;
+  --bad-soft: #fdebec;
+}
+:root[data-theme="dark"] {
+  --page: #191919;
+  --surface: #202020;
+  --hover: #252525;
+  --ink: #d4d4d4;
+  --dim: #9b9b9b;
+  --faint: #6f6f6f;
+  --line: #2f2f2f;
+  --line-soft: #262626;
+  --dev: #529cca;
+  --des: #9a6dd7;
+  --ok: #4dab9a;
+  --warn: #ffa344;
+  --bad: #ff7369;
+  --dev-soft: #1c2b33;
+  --des-soft: #2a2136;
+  --ok-soft: #1c2b26;
+  --warn-soft: #2f2213;
+  --bad-soft: #332020;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-feature-settings: "tnum" 0;
+  }
+  /* 노션은 제목이 굵고 자간이 살짝 좁다 */
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.01em;
+    font-weight: 600;
+  }
+  ::selection {
+    background: #d3e5f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    ::selection {
+      background: #2b4a63;
+    }
+  }
+  /* 숫자는 자리를 고정해 표에서 흔들리지 않게 */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* 노션 인풋 — 평소엔 배경만 있고 포커스 때 테두리가 뜬다 */
+  .nx-input {
+    @apply w-full rounded-notion border border-line bg-transparent px-2.5 py-1.5 text-sm
+           outline-none transition-colors placeholder:text-faint;
+  }
+  .nx-input:focus {
+    border-color: var(--dev);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--dev) 18%, transparent);
+  }
+
+  .nx-btn {
+    @apply inline-flex select-none items-center gap-1.5 rounded-notion border border-line
+           bg-surface px-2.5 py-1.5 text-sm font-medium transition-colors;
+  }
+  .nx-btn:hover:not(:disabled) {
+    background: var(--hover);
+  }
+  .nx-btn:disabled {
+    @apply cursor-default opacity-40;
+  }
+  .nx-btn-primary {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--page);
+  }
+  .nx-btn-primary:hover:not(:disabled) {
+    opacity: 0.85;
+    background: var(--ink);
+  }
+
+  /* 노션 표 — 바깥 테두리 없이 옅은 행 구분선만 */
+  .nx-table {
+    @apply w-full border-collapse text-sm;
+  }
+  .nx-table th {
+    @apply sticky top-0 z-10 whitespace-nowrap border-b border-line px-2.5 py-2
+           text-left text-xs font-medium text-dim;
+    background: var(--page);
+  }
+  .nx-table td {
+    @apply border-b border-line-soft px-2.5 py-2 align-middle;
+  }
+  .nx-table tbody tr:hover {
+    background: var(--hover);
+  }
+  .nx-table tfoot td {
+    @apply border-b-0 border-t font-semibold;
+    border-top-color: var(--line);
+    background: var(--hover);
+  }
+}
+
+/* 스크롤바를 얇게 — 노션 느낌 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 6px;
+  border: 3px solid var(--page);
+}
