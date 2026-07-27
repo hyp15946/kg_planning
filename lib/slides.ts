@@ -1,18 +1,32 @@
 /**
  * 슬라이드 → 단계 후보. 코드 파싱이고 외부로 아무것도 보내지 않는다.
- * 플로우 도식은 번호로 나열되어 있다 (4.5·4.6). 그 번호를 그대로 옮긴다.
  *
- * 러프 기획서는 앞쪽에 표지·개요·목차가 붙고 본문은 홈 화면 설명에서 시작한다.
- * 그 앞과 번호를 못 찾은 슬라이드는 접어 두고(`skip`), 제목이 같은 슬라이드는
- * 한 후보로 합쳐 검토 화면에 한 칸으로 낸다.
+ * 기준이 된 실제 기획서(코코비 신체 러프·상세)의 짜임새에 맞춘다.
+ *
+ *  · 파트 표지 — 「구분/내용」 표에 「활동」 행(체인)과 「개발 볼륨」 행이 있는 슬라이드.
+ *    러프·상세 모두 조직(뇌·입·위…)마다 이 표지가 한 장씩 있다.
+ *  · 플로우 슬라이드 — 상세 기획서에서 표지 바로 뒤에 오는, 시작/활동/완료 구간에
+ *    번호 셀(1, 2, 3…)로 단계를 나열한 도식. 이것이 가장 정확한 단계 목록이다.
+ *  · No-표 표지 — 「No/구분/내용」(또는 「No/활동/내용」) 머리의 번호 표
+ *    (상세의 공통·콘텐츠 선택 화면). 행이 곧 단계다.
+ *  · 구성 표지 — 「구성」 아래 「1) 홈 화면」 같은 항목을 나열한 슬라이드 (러프의
+ *    홈/콘텐츠 선택 화면·공통 화면). 항목이 곧 단계다.
+ *
+ * 단계 출처 우선순위: 플로우 > No-표 > 활동 체인(+OP) > 구성.
+ * 첫 표지 앞의 슬라이드(표지·목차·개요·화면 설계…)는 전부 접고, 표지 사이의
+ * 상세 슬라이드는 해당 파트에 흡수한다.
+ *
+ * 표지가 한 장도 없는 문서는 예전 방식(줄 머리번호 스캔)으로 읽는다.
  */
 import type { Candidate, Step, StepsDoc } from "./types";
+
+/* ── 폴백용: 줄 머리번호 ─────────────────────────────────── */
 
 /** `1.` `(2)` `③` `4-1` 형태의 머리번호를 잡는다. */
 const NUM_RE = /^\s*(?:\(?(\d{1,2})\)?[.)\]]|([①-⑳])|(\d{1,2})\s*[-–]\s*\d{1,2})\s*(.+)$/;
 const CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳";
 
-/** 홈(메인) 화면을 설명하는 슬라이드. 여기서부터가 실질적인 본문이다. */
+/** 홈(메인) 화면을 설명하는 슬라이드. 폴백에서 본문 시작으로 본다. */
 const HOME_RE = /(?:홈|메인|타이틀|home|main|title)\s*(?:화면|페이지|씬|screen|page|scene)/i;
 
 /** 표지·개요·목차. 제목이 짧을 때만 본문이 아닌 것으로 본다 («재료 개요» 같은 오탐 방지). */
@@ -24,6 +38,7 @@ export const SKIP = {
   front: "표지·개요·목차",
   beforeHome: "홈 화면 앞",
   noNumber: "번호 없음",
+  beforeBody: "첫 파트 표지 앞",
 } as const;
 
 /**
@@ -58,17 +73,258 @@ function collectText(el: PageElement, out: string[]) {
   if (el.elementGroup) for (const c of el.elementGroup.children ?? []) collectText(c, out);
 }
 
-/** 슬라이드 한 장 → 후보 한 개. 아직 접어 두지도, 합치지도 않은 상태다. */
-function readSlide(sl: { pageElements?: PageElement[] }, i: number): Candidate {
+/** 슬라이드 한 장의 텍스트를 줄 단위로 편다. 표 셀도 각각 한 줄이 된다. */
+function slideLines(sl: { pageElements?: PageElement[] }): string[] {
   const chunks: string[] = [];
   for (const el of sl.pageElements ?? []) collectText(el, chunks);
-  const lines = chunks
+  return chunks
     .join("\n")
     .split(/\r?\n/)
     .map((s) => s.replace(SOFT_BREAK, " ").trim())
     .filter(Boolean);
+}
 
-  const found: { no: number; text: string }[] = [];
+/* ── 파트 표지 인식 ──────────────────────────────────────── */
+
+interface Cover {
+  kind: "chain" | "notable" | "compose";
+  name: string;
+  steps: Step[];
+  /** 표지의 「개발 볼륨」 문구 그대로. 산출과 눈으로 대조하는 용도. */
+  doc_volume: string | null;
+}
+
+const step = (no: number, text: string, note = ""): Step => ({
+  no,
+  text,
+  kind: null,
+  moves_map: null,
+  note,
+});
+
+/** 표 머리·라벨 등 파트명이 될 수 없는 낱말. */
+const HEADER_WORDS = new Set([
+  "구분", "내용", "활동", "개발 볼륨", "개발볼륨", "No", "no", "링크", "상세",
+  "page", "구성", "시작", "완료", "튜토리얼", "OP", "ED", "Title", "Group Title",
+]);
+
+/** 체인·볼륨 값 등으로 이미 쓰인 줄을 빼고, 짧은 독립 줄을 파트명으로 고른다. */
+function coverName(lines: string[], used: Set<string>): string | null {
+  // 「1) 뇌」 같은 소단원 머리가 있으면 그것이 파트명이다 (상세 기획서).
+  for (const L of lines) {
+    const m = L.match(/^\d{1,2}\)\s*([^>>]+)$/);
+    if (m && m[1].trim().length <= 20) return m[1].trim();
+  }
+  return (
+    lines.find(
+      (L) =>
+        L.length <= 20 &&
+        !HEADER_WORDS.has(L) &&
+        !used.has(L) &&
+        !/^[\d\s.,~()%-]+$/.test(L) && // 숫자·볼륨값
+        !/^\d{1,2}[.)]/.test(L) && // 머리번호 줄
+        !/[>＞→*]/.test(L) &&
+        !L.startsWith("-"),
+    ) ?? null
+  );
+}
+
+/** 「활동」 행(체인)과 「개발 볼륨」 행이 있는 표지 = 파트 한 개. */
+function findChainCover(lines: string[]): Cover | null {
+  const actIdx = lines.findIndex((L) => L === "활동");
+  const volIdx = lines.findIndex((L) => /^개발\s*볼륨$/.test(L));
+  const chain = actIdx >= 0 ? lines[actIdx + 1] : undefined;
+  if (actIdx < 0 || volIdx < 0 || !chain) return null;
+
+  // 「A > B」가 기본이지만 「A + B」로 이은 표지도 있다 (신체 러프의 소장).
+  // +는 낱말 사이가 띄어졌을 때만 구분자로 본다 («게임+인터랙션» 같은 표기 보호).
+  const items = chain
+    .split(/\s*(?:>|＞|->|→)\s*|\s+\+\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!items.length || items.some((t) => t.length > 80)) return null;
+
+  const vol = lines[volIdx + 1];
+  const used = new Set([chain, vol ?? ""]);
+  const name = coverName(lines, used);
+  if (!name) return null;
+  return {
+    kind: "chain",
+    name,
+    steps: items.map((t, i) => step(i + 1, t)),
+    doc_volume: vol && vol.length <= 30 ? vol : null,
+  };
+}
+
+/** 「No/구분/내용」(또는 「No/활동/내용」) 번호 표 = 행이 곧 단계다. */
+function findNoTable(lines: string[]): Cover | null {
+  const h = lines.findIndex(
+    (L, i) => L === "No" && /^(구분|활동)$/.test(lines[i + 1] ?? "") && lines[i + 2] === "내용",
+  );
+  if (h < 0) return null;
+
+  const steps: Step[] = [];
+  for (let i = h + 3; i < lines.length; i++) {
+    if (!/^\d{1,2}$/.test(lines[i])) continue;
+    const text = lines[i + 1];
+    if (!text || /^\d{1,2}$/.test(text) || text === "page" || text.length > 80) continue;
+    steps.push(step(+lines[i], text));
+  }
+  if (!steps.length) return null;
+  const name = coverName(lines.slice(0, h), new Set()) ?? coverName(lines, new Set());
+  if (!name) return null;
+  return { kind: "notable", name, steps, doc_volume: null };
+}
+
+/** 「구성」 아래 「1) 홈 화면」 항목들 = 화면 구성 파트 (러프 기획서). */
+function findCompose(lines: string[]): Cover | null {
+  const c = lines.indexOf("구성");
+  if (c < 0 || lines.includes("오브젝트") || lines.includes("No")) return null;
+
+  const steps: Step[] = [];
+  for (let i = c + 1; i < lines.length; i++) {
+    const m = lines[i].match(/^(\d{1,2})\)\s*(.+)$/);
+    if (m && m[2].trim().length <= 80) steps.push(step(+m[1], m[2].trim()));
+  }
+  if (steps.length < 2) return null; // 항목이 하나면 구성 표가 아니라 디바이더다
+  const name = coverName(lines.slice(0, c), new Set());
+  if (!name) return null;
+  return { kind: "compose", name, steps, doc_volume: null };
+}
+
+/** 우선순위: No-표 > 활동 체인 > 구성. (플로우는 표지 뒤 슬라이드에서 따로 찾는다.) */
+const detectCover = (lines: string[]) =>
+  findNoTable(lines) ?? findChainCover(lines) ?? findCompose(lines);
+
+/* ── 플로우 슬라이드 (상세 기획서) ───────────────────────── */
+
+/** 시작/활동/완료 구간 라벨. 번호 다음 줄이 이거면 단계명이 아니다. */
+const PHASE_RE = /^(시작|활동|완료)$/;
+const BULLET_RE = /^[-–—•]\s*/;
+
+/**
+ * 번호 셀(1, 2, 3…) 다음 줄을 단계로 읽는다.
+ * 「화면 로딩 완료 시」 같은 조건 줄이면 그다음 「- 인트로 컷씬」이 실제 내용이므로
+ * 그쪽을 단계명으로 쓰고 조건은 메모에 남긴다. 「*조작: 드래그」도 메모에 담는다.
+ */
+function findFlowSteps(lines: string[]): Step[] | null {
+  // 플로우 도식에는 시작/활동/완료 라벨이 있고, 오브젝트 명세 표(No/오브젝트/조건)에는 없다
+  if (!lines.includes("활동") || !lines.includes("완료")) return null;
+  if (lines.includes("오브젝트") || lines.includes("No")) return null;
+
+  const steps: Step[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\d{1,2}$/.test(lines[i])) continue;
+    let text = lines[i + 1];
+    if (!text || /^\d{1,2}$/.test(text) || PHASE_RE.test(text) || BULLET_RE.test(text)) continue;
+    let note = "";
+    const detail = lines[i + 2];
+    if (/시$/.test(text) && detail && BULLET_RE.test(detail)) {
+      note = text;
+      text = detail.replace(BULLET_RE, "").trim();
+    }
+    if (!text || text.length > 80) continue;
+    // 다음 번호 전까지 「*조작: …」이 있으면 메모에 붙인다
+    for (let j = i + 1; j < lines.length && !/^\d{1,2}$/.test(lines[j]); j++) {
+      const m = lines[j].match(/^\*?\s*(조작\s*[::].+)$/);
+      if (m) note = (note ? note + " / " : "") + m[1].trim();
+    }
+    steps.push(step(+lines[i], text, note));
+  }
+  return steps.length >= 2 ? steps : null;
+}
+
+/** 러프 기획서의 오프닝 마커. 파트 상세 슬라이드에 독립 줄로 적혀 있다. */
+const OP_RE = /^(OP|ED|시작)$/;
+
+/* ── 본 파서 ─────────────────────────────────────────────── */
+
+/** 번호 중복은 뒤쪽을 버리고 번호순으로 정렬한다 (같은 도식이 두 번 적힌 경우). */
+function uniqSorted(steps: Step[]): Step[] {
+  const seen = new Set<number>();
+  const out: Step[] = [];
+  for (const s of [...steps].sort((a, b) => a.no - b.no)) {
+    if (seen.has(s.no)) continue;
+    seen.add(s.no);
+    out.push(s);
+  }
+  return out;
+}
+
+/** 표지 기반 파싱. 표지 사이의 슬라이드는 앞 파트에 흡수한다. */
+function parseByCovers(all: string[][], covers: (Cover | null)[]): Candidate[] {
+  const out: Candidate[] = [];
+  let cur: (Candidate & { _cover: Cover; _flow: boolean; _op: string | null }) | null = null;
+
+  const close = (c: typeof cur) => {
+    if (!c) return;
+    // 플로우를 못 찾은 체인 파트는 활동 체인 앞에 OP를 단계로 넣는다
+    if (c._cover.kind === "chain" && !c._flow && c._op)
+      c.steps = [step(1, c._op), ...c._cover.steps.map((s) => ({ ...s, no: s.no + 1 }))];
+    c.steps = uniqSorted(c.steps);
+    c.include = c.steps.length > 0;
+    const { _cover, _flow, _op, ...cand } = c;
+    void _cover; void _flow; void _op;
+    out.push(cand);
+  };
+
+  all.forEach((lines, i) => {
+    const cover = covers[i];
+    if (cover) {
+      close(cur);
+      cur = {
+        idxs: [i + 1],
+        title: cover.name,
+        lines: [...lines],
+        include: true,
+        part_key: "",
+        part_name: cover.name,
+        steps: cover.steps.map((s) => ({ ...s })),
+        skip: null,
+        doc_volume: cover.doc_volume,
+        _cover: cover,
+        _flow: false,
+        _op: null,
+      };
+      return;
+    }
+    if (!cur) {
+      // 첫 표지 앞 — 표지·목차·개요·화면 설계 등. 통째로 접는다.
+      const title = lines.find((L) => L.length <= 30 && !NUM_RE.test(L)) ?? `슬라이드 ${i + 1}`;
+      out.push({
+        idxs: [i + 1],
+        title,
+        lines,
+        include: false,
+        part_key: "",
+        part_name: title,
+        steps: [],
+        skip: SKIP.beforeBody,
+        doc_volume: null,
+      });
+      return;
+    }
+    // 표지 뒤 상세 슬라이드 — 파트에 흡수. 플로우 도식이면 단계를 그것으로 바꾼다.
+    cur.idxs.push(i + 1);
+    if (cur._cover.kind === "chain" && !cur._flow) {
+      const flow = findFlowSteps(lines);
+      if (flow) {
+        cur._flow = true;
+        cur.steps = flow;
+        cur.lines.push(`— 슬라이드 ${i + 1} (플로우) —`, ...lines);
+        return;
+      }
+      if (!cur._op) cur._op = lines.find((L) => OP_RE.test(L)) ?? null;
+    }
+  });
+  close(cur);
+  return out;
+}
+
+/* ── 폴백: 줄 머리번호 스캔 (표지가 없는 문서) ───────────── */
+
+function readSlide(lines: string[], i: number): Candidate {
+  const found: Step[] = [];
   for (const L of lines) {
     const m = L.match(NUM_RE);
     if (!m) continue;
@@ -76,17 +332,9 @@ function readSlide(sl: { pageElements?: PageElement[] }, i: number): Candidate {
     const text = (m[4] ?? "").trim();
     // 너무 긴 줄은 도식의 단계가 아니라 설명문일 가능성이 높다
     if (!no || !text || text.length > 80) continue;
-    found.push({ no, text });
+    found.push(step(no, text));
   }
-
-  // 번호 중복은 뒤쪽을 버린다 (같은 도식이 두 번 적힌 경우)
-  const seen = new Set<number>();
-  const uniq: { no: number; text: string }[] = [];
-  for (const s of found.sort((a, b) => a.no - b.no)) {
-    if (seen.has(s.no)) continue;
-    seen.add(s.no);
-    uniq.push(s);
-  }
+  const uniq = uniqSorted(found);
 
   const title = lines.find((L) => L.length <= 30 && !NUM_RE.test(L)) ?? `슬라이드 ${i + 1}`;
   return {
@@ -96,8 +344,9 @@ function readSlide(sl: { pageElements?: PageElement[] }, i: number): Candidate {
     include: uniq.length >= 2, // 번호가 2개 이상이면 도식일 가능성이 높다
     part_key: "",
     part_name: title,
-    steps: uniq.map((s) => ({ ...s, kind: null, moves_map: null, note: "" }) as Step),
+    steps: uniq,
     skip: null,
+    doc_volume: null,
   };
 }
 
@@ -129,22 +378,29 @@ function mergeSameTitle(cands: Candidate[]): Candidate[] {
   return out;
 }
 
-export function parseSlides(pres: Presentation): Candidate[] {
-  const all = (pres.slides ?? []).map(readSlide);
+function parseFallback(all: string[][]): Candidate[] {
+  const cands = all.map(readSlide);
 
   // 홈 화면이 처음 나오는 슬라이드를 본문 시작으로 본다. 목차가 「홈 화면」을
   // 항목으로 적어 둔 경우를 피하려고 표지·개요·목차는 시작점에서 뺀다.
   // 못 찾으면 자르지 않는다 (홈 화면이라는 말을 안 쓰는 기획서도 있다).
-  const home = all.findIndex((c) => !isFront(c.title) && c.lines.some((L) => HOME_RE.test(L)));
+  const home = cands.findIndex((c) => !isFront(c.title) && c.lines.some((L) => HOME_RE.test(L)));
 
-  all.forEach((c, i) => {
+  cands.forEach((c, i) => {
     if (home >= 0 && i < home) c.skip = SKIP.beforeHome;
     else if (isFront(c.title)) c.skip = SKIP.front;
     else if (!c.steps.length) c.skip = SKIP.noNumber;
     if (c.skip) c.include = false;
   });
 
-  return mergeSameTitle(all);
+  return mergeSameTitle(cands);
+}
+
+export function parseSlides(pres: Presentation): Candidate[] {
+  const all = (pres.slides ?? []).map(slideLines);
+  const covers = all.map(detectCover);
+  if (covers.some(Boolean)) return mergeSameTitle(parseByCovers(all, covers));
+  return parseFallback(all);
 }
 
 /** 합쳐진 슬라이드 번호를 사람이 읽게 적는다. `[3,4,5,8]` → `3–5, 8` */

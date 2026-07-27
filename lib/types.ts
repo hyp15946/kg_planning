@@ -152,9 +152,9 @@ export interface IncidentalState {
   design: number;
 }
 
-/** 슬라이드에서 뽑은 단계 후보 (사람이 검토 전). 제목이 같은 슬라이드는 하나로 합쳐진다. */
+/** 슬라이드에서 뽑은 단계 후보 (사람이 검토 전). 파트 표지 하나가 후보 하나다. */
 export interface Candidate {
-  /** 합친 슬라이드 번호. 첫 장이 대표 — 파트 키를 안 적으면 `slide<첫 장>` 이 된다. */
+  /** 파트에 속한 슬라이드 번호(표지+상세). 첫 장이 대표 — 파트 키를 안 적으면 `slide<첫 장>`. */
   idxs: number[];
   title: string;
   lines: string[];
@@ -164,4 +164,9 @@ export interface Candidate {
   steps: Step[];
   /** 접어 둔 이유 (`SKIP` 값). 본문이면 null. 접힌 후보는 산출에 들어가지 않는다. */
   skip: string | null;
+  /**
+   * 파트 표지의 「개발 볼륨」 문구 그대로. 산출 결과와 눈으로 대조하는 참고값이고
+   * steps.json 에는 내보내지 않는다 (F3a — 단계 목록에 볼륨을 넣지 않는다).
+   */
+  doc_volume: string | null;
 }

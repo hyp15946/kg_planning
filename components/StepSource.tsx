@@ -103,9 +103,9 @@ export function StepSource({
           <Panel>
             <Callout tone="info">
               구글 로그인으로 <b>본인 계정의 슬라이드를 직접 읽습니다.</b> 내용이 외부로 나가지 않고
-              브라우저와 구글 사이에서만 오갑니다. 플로우 도식에 번호로 나열된 단계를 <b>코드로</b>{" "}
-              그대로 옮깁니다. 홈 화면 설명 앞의 표지·개요·목차와 번호가 없는 슬라이드는{" "}
-              <b>접어 둡니다.</b>
+              브라우저와 구글 사이에서만 오갑니다. 파트 표지(「활동」·「개발 볼륨」 표)와 표지
+              뒤의 번호 플로우 도식에서 단계를 <b>코드로</b> 그대로 옮기고, 첫 표지 앞의
+              표지·목차·개요 슬라이드는 <b>접어 둡니다.</b>
             </Callout>
             <div className="flex flex-wrap items-center gap-2">
               <Tag tone={loggedIn ? "ok" : "warn"}>
@@ -131,11 +131,11 @@ export function StepSource({
                 <Tag tone="ok">읽음</Tag>
                 <b>{result.title}</b>
                 <span className="text-dim">
-                  · 슬라이드 {result.slides}장 중 본문 {result.groups}묶음 · 번호 붙은 단계{" "}
-                  {result.found}개 발견
+                  · 슬라이드 {result.slides}장 중 파트 {result.groups}개 · 단계 {result.found}개
+                  발견
                 </span>
                 {result.found === 0 && (
-                  <Tag tone="warn">번호가 붙은 줄을 찾지 못했습니다 — 원문 텍스트를 확인하세요</Tag>
+                  <Tag tone="warn">파트 표지나 번호 도식을 찾지 못했습니다 — 원문 텍스트를 확인하세요</Tag>
                 )}
               </p>
             )}
@@ -204,10 +204,10 @@ function Review({
   return (
     <Section n="2-1" title="뽑아낸 단계 확인" hint="— 파트를 지정하고 아닌 슬라이드는 빼세요">
       <Callout tone="warn">
-        <b>여기서 단계 수가 맞는지부터 봐야 합니다.</b> 홈 화면 설명 앞의 슬라이드와 번호를 못 찾은
-        슬라이드는 접어 두었고, <b>제목이 같은 슬라이드는 한 칸으로 합쳤습니다.</b> 도식이 아닌 것이
-        남아 있으면 체크를 풀어 빼고, 같은 파트가 여러 칸에 걸쳐 있으면 파트 키를 같게 적으면
-        합쳐집니다.
+        <b>여기서 단계 수가 맞는지부터 봐야 합니다.</b> 파트 표지마다 한 칸이고, 표지 뒤의 상세
+        슬라이드는 그 파트에 흡수했습니다. 표지에 적힌 <b>기획서 볼륨</b>이 칸에 붙으니 산출
+        결과와 눈으로 대조하세요. 파트가 아닌 것이 남아 있으면 체크를 풀어 빼고, 같은 파트가 여러
+        칸이면 파트 키를 같게 적으면 합쳐집니다.
       </Callout>
 
       <div className="space-y-2">
@@ -225,6 +225,7 @@ function Review({
               </Check>
               <span className="text-xs text-faint tnum">슬라이드 {slideRange(c.idxs)}</span>
               <Tag tone={c.steps.length ? "dev" : "plain"}>{c.steps.length}단계</Tag>
+              {c.doc_volume && <Tag tone="des">기획서 볼륨 {c.doc_volume}</Tag>}
               <input
                 className="nx-input w-[150px] py-1"
                 placeholder="파트 키 (예: art)"
@@ -246,7 +247,10 @@ function Review({
                 {c.steps.map((s, i) => (
                   <div key={`${s.no}-${i}`} className="flex gap-2 text-sm">
                     <span className="w-6 shrink-0 text-right text-faint tnum">{s.no}</span>
-                    <span>{s.text}</span>
+                    <span>
+                      {s.text}
+                      {s.note && <span className="ml-1.5 text-xs text-faint">{s.note}</span>}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -270,8 +274,8 @@ function Review({
 
       {body.length === 0 && (
         <Callout tone="bad">
-          본문으로 볼 슬라이드가 없습니다. 도식이 이미지이거나 홈 화면 설명이 없을 수 있습니다 —
-          아래에서 되살리거나 <code>steps.json</code> 으로 넣으세요.
+          파트로 볼 슬라이드가 없습니다. 표지·도식이 이미지일 수 있습니다 — 아래에서 되살리거나{" "}
+          <code>steps.json</code> 으로 넣으세요.
         </Callout>
       )}
 
