@@ -152,13 +152,16 @@ export interface IncidentalState {
   design: number;
 }
 
-/** 슬라이드에서 뽑은 단계 후보 (사람이 검토 전). */
+/** 슬라이드에서 뽑은 단계 후보 (사람이 검토 전). 제목이 같은 슬라이드는 하나로 합쳐진다. */
 export interface Candidate {
-  idx: number;
+  /** 합친 슬라이드 번호. 첫 장이 대표 — 파트 키를 안 적으면 `slide<첫 장>` 이 된다. */
+  idxs: number[];
   title: string;
   lines: string[];
   include: boolean;
   part_key: string;
   part_name: string;
   steps: Step[];
+  /** 접어 둔 이유 (`SKIP` 값). 본문이면 null. 접힌 후보는 산출에 들어가지 않는다. */
+  skip: string | null;
 }

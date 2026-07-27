@@ -3,7 +3,7 @@
 /** 2. 단계 목록 만들기 (F3a) + 2-1. 뽑아낸 단계 확인 */
 import { useState } from "react";
 import { GAuth, presentationId } from "@/lib/gauth";
-import { candidatesToSteps, parseSlides } from "@/lib/slides";
+import { candidatesToSteps, parseSlides, slideRange } from "@/lib/slides";
 import { download, today } from "@/lib/exports";
 import type { Candidate, DocType, StepsDoc } from "@/lib/types";
 import { Button, Callout, Check, Panel, Section, Tag } from "./ui";
@@ -28,7 +28,12 @@ export function StepSource({
 }) {
   const [src, setSrc] = useState<Src>("drive");
   const [err, setErr] = useState("");
-  const [result, setResult] = useState<{ title: string; slides: number; found: number } | null>(null);
+  const [result, setResult] = useState<{
+    title: string;
+    slides: number;
+    groups: number;
+    found: number;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [cands, setCands] = useState<Candidate[] | null>(null);
 
@@ -43,10 +48,12 @@ export function StepSource({
       const pres = await GAuth.slides(presId);
       const c = parseSlides(pres);
       setCands(c);
+      const body = c.filter((x) => !x.skip);
       setResult({
         title: pres.title ?? "",
-        slides: c.length,
-        found: c.reduce((a, x) => a + x.steps.length, 0),
+        slides: pres.slides?.length ?? 0,
+        groups: body.length,
+        found: body.reduce((a, x) => a + x.steps.length, 0),
       });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -97,7 +104,8 @@ export function StepSource({
             <Callout tone="info">
               구글 로그인으로 <b>본인 계정의 슬라이드를 직접 읽습니다.</b> 내용이 외부로 나가지 않고
               브라우저와 구글 사이에서만 오갑니다. 플로우 도식에 번호로 나열된 단계를 <b>코드로</b>{" "}
-              그대로 옮깁니다.
+              그대로 옮깁니다. 홈 화면 설명 앞의 표지·개요·목차와 번호가 없는 슬라이드는{" "}
+              <b>접어 둡니다.</b>
             </Callout>
             <div className="flex flex-wrap items-center gap-2">
               <Tag tone={loggedIn ? "ok" : "warn"}>
@@ -123,7 +131,8 @@ export function StepSource({
                 <Tag tone="ok">읽음</Tag>
                 <b>{result.title}</b>
                 <span className="text-dim">
-                  · 슬라이드 {result.slides}장 · 번호 붙은 단계 {result.found}개 발견
+                  · 슬라이드 {result.slides}장 중 본문 {result.groups}묶음 · 번호 붙은 단계{" "}
+                  {result.found}개 발견
                 </span>
                 {result.found === 0 && (
                   <Tag tone="warn">번호가 붙은 줄을 찾지 못했습니다 — 원문 텍스트를 확인하세요</Tag>
@@ -182,52 +191,60 @@ function Review({
   onExport: () => void;
 }) {
   const patch = (idx: number, p: Partial<Candidate>) =>
-    setCands(cands.map((c) => (c.idx === idx ? { ...c, ...p } : c)));
+    setCands(cands.map((c) => (c.idxs[0] === idx ? { ...c, ...p } : c)));
 
-  const on = cands.filter((c) => c.include && c.steps.length);
+  // 접어 둔 슬라이드(홈 화면 앞·표지·개요·목차·번호 없음)는 아래 접이식으로 내린다
+  const body = cands.filter((c) => !c.skip);
+  const folded = cands.filter((c) => c.skip);
+
+  const on = body.filter((c) => c.include && c.steps.length);
   const n = on.reduce((a, c) => a + c.steps.length, 0);
   const noKey = on.filter((c) => !c.part_key.trim()).length;
 
   return (
     <Section n="2-1" title="뽑아낸 단계 확인" hint="— 파트를 지정하고 아닌 슬라이드는 빼세요">
       <Callout tone="warn">
-        <b>여기서 단계 수가 맞는지부터 봐야 합니다.</b> 플로우 도식이 아닌 슬라이드(표지·설명 등)는
-        체크를 풀어 빼고, 같은 파트가 여러 슬라이드에 걸쳐 있으면 파트 키를 같게 적으면 합쳐집니다.
+        <b>여기서 단계 수가 맞는지부터 봐야 합니다.</b> 홈 화면 설명 앞의 슬라이드와 번호를 못 찾은
+        슬라이드는 접어 두었고, <b>제목이 같은 슬라이드는 한 칸으로 합쳤습니다.</b> 도식이 아닌 것이
+        남아 있으면 체크를 풀어 빼고, 같은 파트가 여러 칸에 걸쳐 있으면 파트 키를 같게 적으면
+        합쳐집니다.
       </Callout>
 
       <div className="space-y-2">
-        {cands.map((c) => (
+        {body.map((c) => (
           <div
-            key={c.idx}
+            key={c.idxs[0]}
             className={
               "rounded-lg border border-line bg-surface p-3 transition-opacity " +
               (c.include ? "" : "opacity-50")
             }
           >
             <div className="flex flex-wrap items-center gap-2">
-              <Check checked={c.include} onChange={(v) => patch(c.idx, { include: v })}>
-                <b>슬라이드 {c.idx}</b>
+              <Check checked={c.include} onChange={(v) => patch(c.idxs[0], { include: v })}>
+                <b>{c.title}</b>
               </Check>
+              <span className="text-xs text-faint tnum">슬라이드 {slideRange(c.idxs)}</span>
               <Tag tone={c.steps.length ? "dev" : "plain"}>{c.steps.length}단계</Tag>
               <input
                 className="nx-input w-[150px] py-1"
                 placeholder="파트 키 (예: art)"
                 value={c.part_key}
-                onChange={(e) => patch(c.idx, { part_key: e.target.value })}
+                onChange={(e) => patch(c.idxs[0], { part_key: e.target.value })}
               />
               <input
                 className="nx-input w-[180px] py-1"
                 placeholder="파트명"
                 value={c.part_name}
-                onChange={(e) => patch(c.idx, { part_name: e.target.value })}
+                onChange={(e) => patch(c.idxs[0], { part_name: e.target.value })}
               />
               {!c.include && <span className="text-xs text-faint">제외됨</span>}
             </div>
 
             {c.steps.length ? (
               <div className="mt-2 space-y-0.5">
-                {c.steps.map((s) => (
-                  <div key={s.no} className="flex gap-2 text-sm">
+                {/* 여러 장을 합치면 원본 번호가 겹칠 수 있어 자리로 키를 만든다 */}
+                {c.steps.map((s, i) => (
+                  <div key={`${s.no}-${i}`} className="flex gap-2 text-sm">
                     <span className="w-6 shrink-0 text-right text-faint tnum">{s.no}</span>
                     <span>{s.text}</span>
                   </div>
@@ -251,13 +268,44 @@ function Review({
         ))}
       </div>
 
+      {body.length === 0 && (
+        <Callout tone="bad">
+          본문으로 볼 슬라이드가 없습니다. 도식이 이미지이거나 홈 화면 설명이 없을 수 있습니다 —
+          아래에서 되살리거나 <code>steps.json</code> 으로 넣으세요.
+        </Callout>
+      )}
+
+      {folded.length > 0 && (
+        <details className="mt-2.5">
+          <summary className="cursor-pointer text-xs text-faint hover:text-dim">
+            접어 둔 슬라이드 {folded.length}장 — 잘못 접혔다면 되살릴 수 있습니다
+          </summary>
+          <div className="mt-1.5 space-y-1">
+            {folded.map((c) => (
+              <div key={c.idxs[0]} className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="shrink-0 text-faint tnum">슬라이드 {slideRange(c.idxs)}</span>
+                <span className="min-w-0 truncate text-dim">{c.title}</span>
+                <Tag tone="plain">{c.skip}</Tag>
+                {c.steps.length > 0 && <span className="text-faint">번호 {c.steps.length}개</span>}
+                <Button
+                  small
+                  onClick={() => patch(c.idxs[0], { skip: null, include: c.steps.length > 0 })}
+                >
+                  되살리기
+                </Button>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button primary disabled={!n} onClick={onApply}>
           이 단계 목록으로 산출하기
         </Button>
         <Button onClick={onExport}>steps.json 으로 저장</Button>
         <span className="text-xs text-dim">
-          사용할 슬라이드 <b className="text-ink">{on.length}</b>개 · 단계{" "}
+          사용할 묶음 <b className="text-ink">{on.length}</b>개 · 단계{" "}
           <b className="text-ink">{n}</b>개
         </span>
         {noKey > 0 && <Tag tone="warn">파트 키 미입력 {noKey}</Tag>}
