@@ -19,6 +19,7 @@
  * 표지가 한 장도 없는 문서는 예전 방식(줄 머리번호 스캔)으로 읽는다.
  */
 import type { Candidate, Step, StepsDoc } from "./types";
+import { guessKind } from "./volume";
 
 /* ── 폴백용: 줄 머리번호 ─────────────────────────────────── */
 
@@ -237,6 +238,163 @@ function findFlowSteps(lines: string[]): Step[] | null {
 /** 러프 기획서의 오프닝 마커. 파트 상세 슬라이드에 독립 줄로 적혀 있다. */
 const OP_RE = /^(OP|ED|시작)$/;
 
+/* ── 내용 슬라이드 읽기 ──────────────────────────────────────
+   표지는 단계 이름만 준다. 등급 판정 근거(맵 이동·게임 방식)는 내용 슬라이드의
+   단계 상자(「미로 게임」 같은 짧은 독립 줄)와 그 아래 설명 글머리에 있다.
+   상자를 단계에 짝지어 설명을 붙이고, 표지에 없는 상자는 단계로 추가한다.
+   표지가 아예 없는 러프 문서는 이 상자들이 유일한 단계 출처다.        ── */
+
+/** 대조용 정규화 — 공백·기호를 걷어낸다. */
+const norm = (s: string) => s.normalize("NFKC").replace(/[^0-9a-z가-힣]/gi, "").toLowerCase();
+
+/** 상자와 단계가 같은 것을 가리키는지. 포함 관계 또는 낱말 겹침으로 본다. */
+function sameStage(a: string, b: string): boolean {
+  const na = norm(a);
+  const nb = norm(b);
+  if (na.length < 2 || nb.length < 2) return false;
+  if (na.includes(nb) || nb.includes(na)) return true; // «양치» ⊂ «양치하기»
+  const split = (s: string) =>
+    s.split(/[\s(){}[\]/·,+>＞]+/).map(norm).filter((t) => t.length >= 2);
+  const ta = split(a);
+  const tb = split(b);
+  // 낱말도 포함 관계면 겹친 것으로 본다 (잡아먹기 ↔ 먹기)
+  const shared = ta.filter((t) => tb.some((u) => t.includes(u) || u.includes(t)));
+  if (shared.length >= 2) return true;
+  // 낱말이 하나만 겹쳐도 양쪽 다 짧으면 같은 것으로 본다 (음식물 부수기 ↔ 음식 부수기)
+  return shared.length === 1 && Math.min(ta.length, tb.length) <= 2 && shared[0].length >= 3;
+}
+
+/** 단계 상자가 될 수 없는 라벨·구획 이름. */
+const LABEL_RE =
+  /^(구성|레퍼런스|참고|Description|디자인|배경|배치|애니|이미지|네이밍|파티클|오브젝트|조작|장애물|아이템|튜토리얼|UI|가이드|끝|맵\s*\d*|예시)$|예시$/i;
+
+/** 짧은 독립 줄이면 단계 상자 후보다. 글머리·머리번호·라벨·표 머리는 아니다. */
+function isStageBox(L: string): boolean {
+  if (OP_RE.test(L)) return true; // 오프닝 마커는 단계다 (표 머리 낱말보다 우선)
+  return (
+    L.length >= 2 &&
+    L.length <= 16 &&
+    !BULLET_RE.test(L) &&
+    !/^\d{1,2}[.)]/.test(L) && // 「1. 개요」 「1) 뇌」
+    !/^[\d\s.,~()%-]+$/.test(L) &&
+    !/[::>＞→+*]/.test(L) && // 속성 줄(「아이템: …」)·체인·강조 표기
+    !/시$/.test(L) && // 「모든 활동 완료 시」 같은 조건 줄
+    !HEADER_WORDS.has(L) &&
+    !LABEL_RE.test(L)
+  );
+}
+
+interface StageBox {
+  text: string;
+  desc: string[];
+  /** 상자가 몇 개 없는 슬라이드에서 왔는지. 표 조각이 아니라 진짜 단계일 확률이 높다. */
+  sparse: boolean;
+}
+
+const isDescLine = (L: string) => BULLET_RE.test(L) || L.startsWith("*") || /[::]/.test(L);
+
+/** 파트에 흡수된 슬라이드들에서 단계 상자와 그 아래 설명을 모은다. */
+function collectBoxes(slides: string[][]): StageBox[] {
+  const out: StageBox[] = [];
+  for (const lines of slides) {
+    // 오브젝트 명세 표(상세 기획서의 Description)는 단계가 아니라 연출 명세다
+    if (lines.includes("오브젝트") && (lines.includes("조건") || lines.includes("No"))) continue;
+    const boxN = lines.filter(isStageBox).length;
+    const hasDesc = lines.some((L) => isDescLine(L) && L.replace(/^[*\-–—•]\s*/, "").trim());
+    // 상자가 잔뜩이면 표(콘텐츠 리스트·아이콘 예시)다
+    const sparse = boxN <= 3 && hasDesc;
+    let cur: StageBox | null = null;
+    for (const L of lines) {
+      if (isStageBox(L)) {
+        const dup = out.find((b) => sameStage(b.text, L));
+        cur = dup ?? { text: L, desc: [], sparse };
+        if (!dup) out.push(cur);
+        else dup.sparse = dup.sparse || sparse;
+        continue;
+      }
+      // 설명 줄 — 글머리(*, -)와 속성 줄만 근거로 담는다.
+      // 다른 종류의 줄이 나오면 상자와의 연결을 끊는다 (표의 옆 칸이 붙는 것 방지).
+      if (cur && isDescLine(L) && L.length <= 120) {
+        const d = L.replace(/^[*\-–—•]\s*/, "").trim();
+        if (d) cur.desc.push(d);
+      } else if (cur) {
+        cur = null;
+      }
+    }
+  }
+  return out;
+}
+
+/** 맵/화면이 이동하는 게임의 근거. 등급표의 「단일 게임 1.0」 판정 기준이다. */
+const MAP_RE = /맵\s*\d+\s*종|화면\s*\d+\s*배|자동\s*이동|자동이동|맵\s*(이동|중앙)|트랙|길\s*따라/;
+const FIXED_RE = /고정\s*화면|화면\s*고정/;
+/** 설명이 게임을 말하는 근거 (단계명에 «게임»이 없을 때 kind 힌트). */
+const GAME_DESC_RE = /(런|미니|미로|디펜스|퍼즐|레이싱|슈팅)\s*게임|물리\s*엔진/;
+
+const addNote = (s: Step, msg: string) => {
+  if (!s.note?.includes(msg)) s.note = (s.note ? s.note + " / " : "") + msg;
+};
+
+/** 설명에서 등급 판정 근거를 뽑아 단계에 심는다. 문서에 적힌 것만 옮긴다. */
+function applyEvidence(s: Step, desc: string[]) {
+  const text = desc.join("\n");
+  const map = text.match(MAP_RE);
+  const fixed = text.match(FIXED_RE);
+  const game = text.match(GAME_DESC_RE);
+  // 단계명으로 아무것도 못 읽을 때만 설명으로 kind 를 채운다.
+  // 이름이 이미 컷씬/OP/연출 등을 말하면 설명의 «게임» 낱말에 끌려가지 않는다.
+  const sceneName = /연출|팝업|튜토리얼|카운트|게이지|로딩|화면 전환/.test(s.text);
+  if (!s.kind && !guessKind(s.text) && !sceneName && (game || map)) {
+    s.kind = "game";
+    if (game && !map) addNote(s, `근거: ${game[0]}`);
+  }
+  const k = s.kind ?? guessKind(s.text);
+  if (k === "game" && s.moves_map == null) {
+    if (map) {
+      s.moves_map = true;
+      addNote(s, `근거: ${map[0]} (맵/화면 이동)`);
+    } else if (fixed) {
+      s.moves_map = false;
+      addNote(s, `근거: ${fixed[0]}`);
+    }
+  }
+}
+
+/**
+ * 내용 슬라이드의 상자·설명을 단계에 붙인다.
+ *  - 짝지어진 상자: 설명에서 kind·moves_map 근거를 심는다
+ *  - 짝이 없는 상자: 단계로 추가한다 (표지 체인이 뭉갠 단계 — 간의 «해독 게임».
+ *    F3a: 단계를 빠뜨리지 않는다). append=false 면 붙이기만 한다 (플로우·No-표 파트)
+ * 파트 전체 텍스트로 추측하지는 않는다 — 게임이 여럿인 파트에서 엉뚱한 단계에
+ * 근거가 붙는다. 상자에 붙은 설명만 그 단계의 근거다.
+ */
+function enrichSteps(
+  steps: Step[],
+  slides: string[][],
+  append: boolean,
+  appendNote = "",
+): Step[] {
+  const boxes = collectBoxes(slides);
+  const out = steps.map((s) => ({ ...s }));
+  for (const b of boxes) {
+    // OP·시작 상자는 그 이름의 단계에만 붙는다 — «시작» 상자가 «게임 시작» 연출
+    // 줄에 붙어 게임 근거를 옮기는 것을 막는다
+    const hit = out.find((s) =>
+      OP_RE.test(b.text) ? OP_RE.test(s.text) : sameStage(s.text, b.text),
+    );
+    if (hit) {
+      applyEvidence(hit, b.desc);
+      continue;
+    }
+    // 설명이 없으면 상자만 나란한 슬라이드(단 몇 개짜리)에서 온 것만 단계로 믿는다
+    if (!append || (!b.desc.length && !b.sparse)) continue;
+    const added = step(out.length + 1, b.text, appendNote);
+    applyEvidence(added, b.desc);
+    out.push(added);
+  }
+  return out;
+}
+
 /* ── 본 파서 ─────────────────────────────────────────────── */
 
 /** 번호 중복은 뒤쪽을 버리고 번호순으로 정렬한다 (같은 도식이 두 번 적힌 경우). */
@@ -251,10 +409,28 @@ function uniqSorted(steps: Step[]): Step[] {
   return out;
 }
 
+/** 첫 표지(첫 파트) 앞 슬라이드 — 표지·목차·개요 등. 접힌 후보로 만든다. */
+function frontCandidate(lines: string[], i: number): Candidate {
+  const title = lines.find((L) => L.length <= 30 && !NUM_RE.test(L)) ?? `슬라이드 ${i + 1}`;
+  return {
+    idxs: [i + 1],
+    title,
+    lines,
+    include: false,
+    part_key: "",
+    part_name: title,
+    steps: [],
+    skip: SKIP.beforeBody,
+    doc_volume: null,
+  };
+}
+
 /** 표지 기반 파싱. 표지 사이의 슬라이드는 앞 파트에 흡수한다. */
 function parseByCovers(all: string[][], covers: (Cover | null)[]): Candidate[] {
   const out: Candidate[] = [];
-  let cur: (Candidate & { _cover: Cover; _flow: boolean; _op: string | null }) | null = null;
+  let cur:
+    | (Candidate & { _cover: Cover; _flow: boolean; _op: string | null; _slides: string[][] })
+    | null = null;
 
   const close = (c: typeof cur) => {
     if (!c) return;
@@ -262,9 +438,18 @@ function parseByCovers(all: string[][], covers: (Cover | null)[]): Candidate[] {
     if (c._cover.kind === "chain" && !c._flow && c._op)
       c.steps = [step(1, c._op), ...c._cover.steps.map((s) => ({ ...s, no: s.no + 1 }))];
     c.steps = uniqSorted(c.steps);
+    // 내용 슬라이드를 읽어 판정 근거를 붙인다. 플로우 파트는 이미 단계가 정확하니
+    // 근거만 심고(안전망), 체인·구성 파트는 표지에 없는 상자를 단계로도 추가한다.
+    c.steps = enrichSteps(
+      c.steps,
+      c._slides,
+      c._cover.kind !== "notable" && !c._flow,
+      "표지 활동에 없음 — 본문에서 발견",
+    );
+    c.steps.forEach((s, i) => (s.no = i + 1));
     c.include = c.steps.length > 0;
-    const { _cover, _flow, _op, ...cand } = c;
-    void _cover; void _flow; void _op;
+    const { _cover, _flow, _op, _slides, ...cand } = c;
+    void _cover; void _flow; void _op; void _slides;
     out.push(cand);
   };
 
@@ -285,27 +470,17 @@ function parseByCovers(all: string[][], covers: (Cover | null)[]): Candidate[] {
         _cover: cover,
         _flow: false,
         _op: null,
+        _slides: [],
       };
       return;
     }
     if (!cur) {
-      // 첫 표지 앞 — 표지·목차·개요·화면 설계 등. 통째로 접는다.
-      const title = lines.find((L) => L.length <= 30 && !NUM_RE.test(L)) ?? `슬라이드 ${i + 1}`;
-      out.push({
-        idxs: [i + 1],
-        title,
-        lines,
-        include: false,
-        part_key: "",
-        part_name: title,
-        steps: [],
-        skip: SKIP.beforeBody,
-        doc_volume: null,
-      });
+      out.push(frontCandidate(lines, i));
       return;
     }
     // 표지 뒤 상세 슬라이드 — 파트에 흡수. 플로우 도식이면 단계를 그것으로 바꾼다.
     cur.idxs.push(i + 1);
+    cur._slides.push(lines);
     if (cur._cover.kind === "chain" && !cur._flow) {
       const flow = findFlowSteps(lines);
       if (flow) {
@@ -319,6 +494,90 @@ function parseByCovers(all: string[][], covers: (Cover | null)[]): Candidate[] {
   });
   close(cur);
   return out;
+}
+
+/* ── 소단원 그룹 파싱 (표지가 없는 문서) ─────────────────────
+   러프 문서에 파트 표지가 없어도 내용 슬라이드마다 「1) 뇌」 같은 소단원 머리가
+   있다. 같은 머리가 이어지는 구간을 파트로 보고, 단계는 그 구간의 단계 상자에서
+   뽑는다. 글머리 설명이 하나도 없는 구간(개요 표 등)은 기본 제외로 둔다.    ── */
+
+/** 슬라이드의 소단원 머리. 여러 개면 목차이고, 개요·목차 장은 본문이 아니다. */
+function groupName(lines: string[]): string | null {
+  if (lines.some((L) => /^\d{1,2}[.]\s*(개요|목차|차례|표지)/.test(L))) return null;
+  const names = new Set<string>();
+  for (const L of lines) {
+    const m = L.match(/^\d{1,2}\)\s*([^>＞]+)$/);
+    if (m && m[1].trim().length <= 20) names.add(m[1].trim());
+  }
+  return names.size === 1 ? [...names][0] : null;
+}
+
+function parseByGroups(all: string[][], covers: (Cover | null)[]): Candidate[] | null {
+  const out: Candidate[] = [];
+  let cur: (Candidate & { _slides: string[][]; _fromCover: boolean }) | null = null;
+
+  const close = (c: typeof cur) => {
+    if (!c) return;
+    // 단계 = 표지 항목 + 구간의 상자들. OP/시작 상자는 맨 앞으로 보낸다.
+    let steps = enrichSteps(c.steps, c._slides, true, "");
+    steps = [...steps.filter((s) => OP_RE.test(s.text)), ...steps.filter((s) => !OP_RE.test(s.text))];
+    steps.forEach((s, i) => (s.no = i + 1));
+    c.steps = steps;
+    // 글머리 설명이 전혀 없는 구간은 개요·기록 표일 가능성이 높다 — 빼고 시작한다
+    const hasDesc =
+      c._fromCover ||
+      c._slides.some((ls) =>
+        ls.some(
+          (L) =>
+            (BULLET_RE.test(L) || L.startsWith("*")) && L.replace(/^[*\-–—•]\s*/, "").trim(),
+        ),
+      );
+    c.include = steps.length > 0 && hasDesc;
+    const { _slides, _fromCover, ...cand } = c;
+    void _slides; void _fromCover;
+    out.push(cand);
+  };
+
+  const open = (i: number, lines: string[], name: string, cover: Cover | null) => {
+    close(cur);
+    cur = {
+      idxs: [i + 1],
+      title: name,
+      lines: [...lines],
+      include: true,
+      part_key: "",
+      part_name: name,
+      steps: cover ? cover.steps.map((s) => ({ ...s })) : [],
+      skip: null,
+      doc_volume: cover?.doc_volume ?? null,
+      _slides: cover ? [] : [lines],
+      _fromCover: !!cover,
+    };
+  };
+
+  all.forEach((lines, i) => {
+    const cover = covers[i]; // 구성 표지도 파트 경계다 (러프의 홈/공통 화면)
+    if (cover) {
+      open(i, lines, cover.name, cover);
+      return;
+    }
+    const name = groupName(lines);
+    if (name && (!cur || !sameStage(cur.title, name))) {
+      open(i, lines, name, null);
+      return;
+    }
+    if (!cur) {
+      out.push(frontCandidate(lines, i));
+      return;
+    }
+    cur.idxs.push(i + 1);
+    cur._slides.push(lines);
+  });
+  close(cur);
+
+  // 그룹이 두 개는 되어야 이 짜임새의 문서다 (표지가 있으면 그 자체로 근거다).
+  const bodies = out.filter((c) => !c.skip).length;
+  return bodies >= 2 || (bodies >= 1 && covers.some(Boolean)) ? out : null;
 }
 
 /* ── 폴백: 줄 머리번호 스캔 (표지가 없는 문서) ───────────── */
@@ -399,7 +658,12 @@ function parseFallback(all: string[][]): Candidate[] {
 export function parseSlides(pres: Presentation): Candidate[] {
   const all = (pres.slides ?? []).map(slideLines);
   const covers = all.map(detectCover);
-  if (covers.some(Boolean)) return mergeSameTitle(parseByCovers(all, covers));
+  // 파트 표지(활동·No-표)가 있어야 표지 기반으로 읽는다. 구성 표지만으로는
+  // 문서를 나눌 수 없다 — 조직 파트가 표지 없이 이어지는 문서일 수 있다.
+  if (covers.some((c) => c && c.kind !== "compose"))
+    return mergeSameTitle(parseByCovers(all, covers));
+  const grouped = parseByGroups(all, covers);
+  if (grouped) return mergeSameTitle(grouped);
   return parseFallback(all);
 }
 

@@ -274,7 +274,7 @@ describe("파트 표지 — 상세 기획서형 (플로우·No-표)", () => {
     expect(brain.steps[2].note).toBe("조작: 드래그");
   });
 
-  it("플로우의 중복 번호는 뒤쪽을 버린다 (대장 5·5)", () => {
+  it("플로우의 중복 번호는 뒤쪽을 버리고 순서대로 다시 매긴다 (대장 5·5)", () => {
     const [colon] = parseSlides({
       slides: [
         partCover("대장", "똥 만들기 > 기생충 잡기", "1.5"),
@@ -295,9 +295,9 @@ describe("파트 표지 — 상세 기획서형 (플로우·No-표)", () => {
       ],
     });
     expect(colon.steps.map((s) => [s.no, s.text])).toEqual([
-      [4, "똥 만들기"],
-      [5, "기생충 컷씬"],
-      [6, "기생충 잡기"],
+      [1, "똥 만들기"],
+      [2, "기생충 컷씬"],
+      [3, "기생충 잡기"],
     ]);
   });
 
@@ -351,6 +351,136 @@ describe("파트 표지 — 상세 기획서형 (플로우·No-표)", () => {
     // 명세 표를 플로우로 오인하지 않고 활동 체인을 유지한다
     expect(brain.steps.map((s) => s.text)).toEqual(["신호 전달 미로 게임"]);
     expect(brain.idxs).toEqual([1, 2]);
+  });
+});
+
+describe("내용 슬라이드 읽기 — 등급 판정 근거", () => {
+  it("단계 상자의 설명에서 맵 이동 근거를 읽어 moves_map 을 채운다", () => {
+    const [brain] = parseSlides({
+      slides: [
+        partCover("뇌", "감각 전달 미로 게임", "1.1"),
+        slide("4. 러프 기획\n1) 뇌\nOP\n* 신호를 공유하며 다른 신체 기관에게 말해줌"),
+        slide("4. 러프 기획\n1) 뇌\n미로 게임\n* 맵 2종 교차 출력 (화면 4배)\n* 길 = 뉴런"),
+      ],
+    }).filter((c) => !c.skip);
+    expect(brain.steps.map((s) => s.text)).toEqual(["OP", "감각 전달 미로 게임"]);
+    expect(brain.steps[1].moves_map).toBe(true);
+    expect(brain.steps[1].note).toContain("맵/화면 이동");
+  });
+
+  it("표지 활동에 없는 상자는 단계로 추가한다 (간의 해독 게임)", () => {
+    const [liver] = parseSlides({
+      slides: [
+        partCover("간", "영양소 정리 하기", "1.6"),
+        slide("4. 러프 기획\n9) 간\n분류 미로 게임\n* 맵 2종 교차, 저장소 위치 랜덤 배치"),
+        slide("4. 러프 기획\n9) 간\n해독 게임\n* 독소를 던져서 간에게 주기"),
+      ],
+    }).filter((c) => !c.skip);
+    expect(liver.steps.map((s) => s.text)).toEqual([
+      "영양소 정리 하기",
+      "분류 미로 게임",
+      "해독 게임",
+    ]);
+    expect(liver.steps[1].note).toContain("본문에서 발견");
+    expect(liver.steps[1].moves_map).toBe(true);
+  });
+
+  it("이름만으로 모를 때 설명의 «디펜스 게임»이 kind 를 채운다 — 맵 근거는 없으니 moves_map 은 미정", () => {
+    const [colon] = parseSlides({
+      slides: [
+        partCover("대장", "똥 만들기 > 기생충 잡기", "1.5"),
+        slide("4. 러프 기획\n8) 대장\n기생충 잡기\n* 디펜스 게임\n* 연타로 공격해서 밀어내기"),
+      ],
+    }).filter((c) => !c.skip);
+    const bug = colon.steps.find((s) => s.text === "기생충 잡기")!;
+    expect(bug.kind).toBe("game");
+    expect(bug.moves_map).toBeNull();
+  });
+
+  it("OP 상자는 설명에 «게임»이 있어도 게임으로 오판하지 않는다", () => {
+    const [part] = parseSlides({
+      slides: [
+        partCover("심장", "트랙 런게임", "1.1"),
+        slide("4. 러프 기획\n4) 심장\nOP\n* 미니게임을 안내하는 심장"),
+      ],
+    }).filter((c) => !c.skip);
+    expect(part.steps[0].text).toBe("OP");
+    expect(part.steps[0].kind).toBeNull();
+  });
+
+  it("플로우 파트에는 상자를 단계로 추가하지 않고, 파트 전체 텍스트로 추측하지도 않는다", () => {
+    const 뇌표지 = tableSlide(
+      [
+        ["구분", "내용"],
+        ["활동", "신호 전달 미로 게임"],
+        ["개발 볼륨", "1.1"],
+      ],
+      "1) 뇌",
+    );
+    const 뇌플로우 = flowSlide(
+      "뇌",
+      "시작",
+      "1",
+      "화면 로딩 완료 시",
+      "- 인트로 컷씬",
+      "활동",
+      "2",
+      "신호 전달 미로 게임",
+      "완료",
+      "3",
+      "게임 완료 시",
+      "- 게임 완료 연출",
+    );
+    const [brain] = parseSlides({
+      slides: [뇌표지, 뇌플로우, slide("1) 뇌\n연출 참고\n* 맵 2종 교차 출력")],
+    }).filter((c) => !c.skip);
+    expect(brain.steps).toHaveLength(3);
+    // «연출 참고» 상자의 근거는 미로 게임 단계와 짝지어지지 않았으므로 옮기지 않는다
+    const game = brain.steps.find((s) => s.text === "신호 전달 미로 게임")!;
+    expect(game.moves_map).toBeNull();
+  });
+});
+
+describe("소단원 그룹 파싱 — 파트 표지가 없는 문서", () => {
+  const noCoverDoc = (): Presentation => ({
+    slides: [
+      slide("코코비 신체 탐험 러프 기획\n박하영"),
+      slide("목차\n1. 개요\n1) 뇌\n2) 입"),
+      slide("1. 개요\n3) 목표\n- 뇌: 1.1\n- 입: 1"),
+      slide("4. 러프 기획\n1) 뇌\nOP\n* 신호를 보내야 한다고 말해줌"),
+      slide("4. 러프 기획\n1) 뇌\n미로 게임\n* 맵 2종 교차 출력 (화면 4배)"),
+      slide("4. 러프 기획\n2) 입\n음식물 쪼개기\n* 튀어올라오는 음식\nOP\n* 열심히 씹고 있는 이빨들"),
+      slide("4. 러프 기획\n2) 입\n양치\n* 세균과 찌꺼기 드래그해서 없애기"),
+    ],
+  });
+
+  it("「N) 이름」 구간이 파트가 되고 상자가 단계가 된다", () => {
+    const parts = parseSlides(noCoverDoc()).filter((c) => !c.skip);
+    expect(parts.map((p) => p.title)).toEqual(["뇌", "입"]);
+    expect(parts[1].steps.map((s) => s.text)).toEqual(["OP", "음식물 쪼개기", "양치"]);
+  });
+
+  it("OP 상자가 1번 단계로 오고 게임 근거도 읽는다", () => {
+    const [brain] = parseSlides(noCoverDoc()).filter((c) => !c.skip);
+    expect(brain.steps.map((s) => s.text)).toEqual(["OP", "미로 게임"]);
+    expect(brain.steps[1].moves_map).toBe(true);
+  });
+
+  it("표지·목차·개요 장은 본문이 아니다", () => {
+    const c = parseSlides(noCoverDoc());
+    expect(c.slice(0, 3).every((x) => x.skip === SKIP.beforeBody)).toBe(true);
+  });
+
+  it("글머리 설명이 전혀 없는 구간(기록 표 등)은 기본 제외로 시작한다", () => {
+    const c = parseSlides({
+      slides: [
+        slide("2. 확정\n1) 콘텐츠 리스트\n구분\n상세\n뇌\n입"),
+        slide("4. 러프 기획\n1) 뇌\n미로 게임\n* 맵 2종 교차"),
+      ],
+    });
+    const list = c.find((x) => x.title === "콘텐츠 리스트")!;
+    expect(list.include).toBe(false);
+    expect(c.find((x) => x.title === "뇌")!.include).toBe(true);
   });
 });
 
